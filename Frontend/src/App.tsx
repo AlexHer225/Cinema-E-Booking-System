@@ -5,9 +5,10 @@ import MoviePage from "./components/moviePage";
 import MovieDetail from "./Pages/MovieDetail";
 import HomePage from "./Pages/HomePage";
 import BookingPage from "./Pages/BookingPage";
-import LoginPage from "./Pages/LoginPage";
-import RegisterPage from "./Pages/RegistrationPage";
+import LoginPage from "./Pages/login";
+import RegisterPage from "./components/registration";
 import EditProfilePage from "./Pages/EditProfile";
+import ResetPasswordPage from "./Pages/ResetPassword";
 
 function App() {
   return (
@@ -37,6 +38,7 @@ function App() {
 
         {/* 404 fallback (must be last) */}
         <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="/ResetPassword" element={<ResetPasswordPage />} />
       </Routes>
     </div>
   );
