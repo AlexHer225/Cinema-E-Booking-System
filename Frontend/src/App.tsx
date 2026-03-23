@@ -5,8 +5,8 @@ import MoviePage from "./components/moviePage";
 import MovieDetail from "./Pages/MovieDetail";
 import HomePage from "./Pages/HomePage";
 import BookingPage from "./Pages/BookingPage";
-import LoginPage from "./Pages/login";
-import RegisterPage from "./components/registration";
+import LoginPage from "./Pages/LoginPage";
+import RegisterPage from "./Pages/RegistrationPage";
 import EditProfilePage from "./Pages/EditProfile";
 import ResetPasswordPage from "./Pages/ResetPassword";
 

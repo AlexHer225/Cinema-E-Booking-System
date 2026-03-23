@@ -5,8 +5,41 @@ type LoginData = {
   password: string;
 };
 
+type LoginResponse = {
+  access_token: string;
+  token_type: string;
+  user?: {
+    id: string;
+    email: string;
+    username?: string;
+    name?: string | null;
+  };
+};
+
+type ApiErrorItem = {
+  msg?: string;
+};
 
 const bgUrl = "/images/backgroundImage.jpg";
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+
+const getErrorMessage = (data: any) => {
+  if (!data) return "Login failed.";
+
+  if (typeof data.detail === "string") return data.detail;
+
+  if (Array.isArray(data.detail)) {
+    return data.detail
+      .map((item: ApiErrorItem) => item.msg)
+      .filter(Boolean)
+      .join(", ");
+  }
+
+  if (typeof data.message === "string") return data.message;
+
+  return "Login failed.";
+};
 
 const LoginPage: React.FC = () => {
   const [formData, setFormData] = useState<LoginData>({
@@ -16,27 +49,39 @@ const LoginPage: React.FC = () => {
 
   const [errors, setErrors] = useState<Partial<LoginData>>({});
   const [showPassword, setShowPassword] = useState(false);
+  const [serverError, setServerError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
+    const fieldName = name as keyof LoginData;
 
     setFormData((prev) => ({
       ...prev,
-      [name]: value,
+      [fieldName]: value,
     }));
+
+    setErrors((prev) => ({
+      ...prev,
+      [fieldName]: undefined,
+    }));
+
+    setServerError("");
   };
 
   const validate = () => {
     const newErrors: Partial<LoginData> = {};
 
-    if (!formData.username) newErrors.username = "Username is required";
+    if (!formData.username.trim()) newErrors.username = "Username is required";
     if (!formData.password) newErrors.password = "Password is required";
 
     return newErrors;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    setServerError("");
 
     const validationErrors = validate();
     if (Object.keys(validationErrors).length > 0) {
@@ -44,12 +89,51 @@ const LoginPage: React.FC = () => {
       return;
     }
 
-    console.log("Login attempt:", formData);
+    setErrors({});
+    setIsSubmitting(true);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/login`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          username: formData.username.trim(),
+          password: formData.password,
+        }),
+      });
+
+      const data: LoginResponse | any = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        setServerError(getErrorMessage(data));
+        return;
+      }
+
+      if (!data?.access_token) {
+        setServerError("Login succeeded, but no access token was returned.");
+        return;
+      }
+
+      localStorage.setItem("access_token", data.access_token);
+      localStorage.setItem("token_type", data.token_type || "bearer");
+
+      if (data.user) {
+        localStorage.setItem("user", JSON.stringify(data.user));
+      }
+
+      window.location.href = "/";
+    } catch (error) {
+      console.error("Login error:", error);
+      setServerError("Could not connect to the server.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
     <div style={styles.page}>
-     
       <div style={{ ...styles.bg, backgroundImage: `url(${bgUrl})` }} />
 
       <div style={styles.container}>
@@ -62,6 +146,7 @@ const LoginPage: React.FC = () => {
             placeholder="Username"
             value={formData.username}
             onChange={handleChange}
+            autoComplete="username"
           />
           {errors.username && (
             <span style={styles.error}>{errors.username}</span>
@@ -75,6 +160,7 @@ const LoginPage: React.FC = () => {
               value={formData.password}
               onChange={handleChange}
               style={{ width: "100%" }}
+              autoComplete="current-password"
             />
             <button
               type="button"
@@ -88,7 +174,11 @@ const LoginPage: React.FC = () => {
             <span style={styles.error}>{errors.password}</span>
           )}
 
-          <button type="submit">Login</button>
+          {serverError && <div style={styles.serverError}>{serverError}</div>}
+
+          <button type="submit" disabled={isSubmitting}>
+            {isSubmitting ? "Logging in..." : "Login"}
+          </button>
         </form>
 
         <p style={{ marginTop: "10px" }}>
@@ -151,6 +241,12 @@ const styles: { [key: string]: React.CSSProperties } = {
   error: {
     color: "red",
     fontSize: "0.8rem",
+    textAlign: "left",
+  },
+
+  serverError: {
+    color: "red",
+    fontSize: "0.9rem",
     textAlign: "left",
   },
 };
