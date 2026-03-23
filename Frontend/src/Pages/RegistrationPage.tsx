@@ -120,7 +120,11 @@ const RegisterPage: React.FC = () => {
         return;
       }
 
-      setSuccessMessage("Account created successfully. You can now log in.");
+      setSuccessMessage(
+        data?.message ||
+          "Account created. Check your email and click the verification link before logging in."
+      );
+
       setFormData({
         name: "",
         username: "",
