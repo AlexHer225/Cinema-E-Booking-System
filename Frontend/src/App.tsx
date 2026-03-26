@@ -5,6 +5,11 @@ import MoviePage from "./components/moviePage";
 import MovieDetail from "./Pages/MovieDetail";
 import HomePage from "./Pages/HomePage";
 import BookingPage from "./Pages/BookingPage";
+import LoginPage from "./Pages/LoginPage";
+import RegisterPage from "./Pages/RegistrationPage";
+import EditProfilePage from "./Pages/EditProfile";
+import ResetPasswordPage from "./Pages/ResetPassword";
+import AdminPortalPage from "./Pages/AdminPortal";
 
 function App() {
   return (
@@ -24,20 +29,23 @@ function App() {
         {/* Old route - redirect to canonical route */}
         <Route path="/video/:id" element={<VideoRedirect />} />
 
-        {/* Booking (matches MovieDetail navigate(`/booking/${title}?time=${t}`)) */}
+        {/* Booking */}
         <Route path="/booking/:title" element={<BookingPage />} />
 
-        {/* 404 fallback */}
+        {/* Auth */}
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+        <Route path="/editprofile" element={<EditProfilePage />} />
+
+        {/* 404 fallback (must be last) */}
         <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="/ResetPassword" element={<ResetPasswordPage />} />
+        <Route path="/admin" element={<AdminPortalPage />} />
       </Routes>
     </div>
   );
 }
 
-/**
- * Redirect /video/:id -> /movies/:id while preserving the actual :id value.
- * (Navigate cannot interpolate params in a string like "/movies/:id".)
- */
 function VideoRedirect() {
   const url = window.location.pathname; // e.g. "/video/abc123"
   const id = url.split("/").pop();      // "abc123"
