@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 
 type LoginData = {
   username: string;
@@ -42,6 +43,8 @@ const getErrorMessage = (data: any) => {
 };
 
 const LoginPage: React.FC = () => {
+  const navigate = useNavigate();
+
   const [formData, setFormData] = useState<LoginData>({
     username: "",
     password: "",
@@ -123,7 +126,7 @@ const LoginPage: React.FC = () => {
         localStorage.setItem("user", JSON.stringify(data.user));
       }
 
-      window.location.href = "/";
+      navigate("/");
     } catch (error) {
       console.error("Login error:", error);
       setServerError("Could not connect to the server.");
@@ -134,120 +137,238 @@ const LoginPage: React.FC = () => {
 
   return (
     <div style={styles.page}>
+      {/* Background */}
       <div style={{ ...styles.bg, backgroundImage: `url(${bgUrl})` }} />
+      <div style={styles.overlay} />
 
-      <div style={styles.container}>
-        <h2>Login</h2>
-
-        <form onSubmit={handleSubmit} style={styles.form}>
-          <input
-            type="text"
-            name="username"
-            placeholder="Username"
-            value={formData.username}
-            onChange={handleChange}
-            autoComplete="username"
-          />
-          {errors.username && (
-            <span style={styles.error}>{errors.username}</span>
-          )}
-
-          <div style={styles.passwordWrapper}>
-            <input
-              type={showPassword ? "text" : "password"}
-              name="password"
-              placeholder="Password"
-              value={formData.password}
-              onChange={handleChange}
-              style={{ width: "100%" }}
-              autoComplete="current-password"
-            />
-            <button
-              type="button"
-              onClick={() => setShowPassword((prev) => !prev)}
-              style={styles.toggleBtn}
-            >
-              {showPassword ? "Hide" : "Show"}
-            </button>
+      {/* Centered Wrapper */}
+      <div style={styles.wrapper}>
+        <div style={styles.card}>
+          <div style={styles.headerBlock}>
+            <p style={styles.eyebrow}>Welcome Back</p>
+            <h1 style={styles.title}>Log In</h1>
+            <p style={styles.subtitle}>
+              Sign in to continue your movie experience.
+            </p>
           </div>
-          {errors.password && (
-            <span style={styles.error}>{errors.password}</span>
-          )}
 
-          {serverError && <div style={styles.serverError}>{serverError}</div>}
+          <form onSubmit={handleSubmit} style={styles.form}>
+            {/* Username */}
+            <div style={styles.fieldGroup}>
+              <label style={styles.label}>Username</label>
+              <input
+                type="text"
+                name="username"
+                placeholder="Enter your username"
+                value={formData.username}
+                onChange={handleChange}
+                style={styles.input}
+              />
+              {errors.username && (
+                <span style={styles.error}>{errors.username}</span>
+              )}
+            </div>
 
-          <button type="submit" disabled={isSubmitting}>
-            {isSubmitting ? "Logging in..." : "Login"}
-          </button>
-        </form>
+            {/* Password */}
+            <div style={styles.fieldGroup}>
+              <label style={styles.label}>Password</label>
+              <div style={styles.passwordWrapper}>
+                <input
+                  type={showPassword ? "text" : "password"}
+                  name="password"
+                  placeholder="Enter your password"
+                  value={formData.password}
+                  onChange={handleChange}
+                  style={styles.passwordInput}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  style={styles.toggleBtn}
+                >
+                  {showPassword ? "Hide" : "Show"}
+                </button>
+              </div>
+              {errors.password && (
+                <span style={styles.error}>{errors.password}</span>
+              )}
+            </div>
 
-        <p style={{ marginTop: "10px" }}>
-          Don't have an account? <a href="/register">Register</a>
-        </p>
+            {serverError && (
+              <div style={styles.serverError}>{serverError}</div>
+            )}
+
+            {/* Submit */}
+            <button type="submit" disabled={isSubmitting} style={styles.submitBtn}>
+              {isSubmitting ? "Logging in..." : "Log In"}
+            </button>
+          </form>
+
+          {/* Footer */}
+          <div style={styles.footer}>
+            <span style={styles.footerText}>Don’t have an account?</span>
+            <Link to="/register" style={styles.footerLink}>
+              Sign Up
+            </Link>
+          </div>
+        </div>
       </div>
     </div>
   );
 };
 
-const styles: { [key: string]: React.CSSProperties } = {
+const styles: Record<string, React.CSSProperties> = {
   page: {
     position: "relative",
     minHeight: "100vh",
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
+    width: "100%",
   },
 
   bg: {
     position: "fixed",
-    top: 0,
-    left: 0,
-    width: "100vw",
-    height: "100vh",
+    inset: 0,
     backgroundSize: "cover",
     backgroundPosition: "center",
-    backgroundRepeat: "no-repeat",
+    zIndex: -2,
+  },
+
+  overlay: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(0,0,0,0.55)",
     zIndex: -1,
   },
 
-  container: {
+  // ✅ PERFECT CENTERING FIX
+  wrapper: {
+    height: "calc(100vh - 70px)",
+    marginTop: 70,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "0 24px",
+    boxSizing: "border-box",
+  },
+
+  card: {
     width: "100%",
-    maxWidth: "400px",
-    padding: "25px",
-    borderRadius: "10px",
+    maxWidth: 480,
+    background: "rgba(10,10,12,0.75)",
+    border: "1px solid rgba(255,255,255,0.12)",
+    borderRadius: 20,
+    backdropFilter: "blur(14px)",
+    padding: "32px",
+    color: "white",
+    boxShadow: "0 20px 50px rgba(0,0,0,0.4)",
+  },
+
+  headerBlock: {
     textAlign: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.9)",
-    boxShadow: "0 4px 20px rgba(0,0,0,0.2)",
+    marginBottom: 20,
+  },
+
+  eyebrow: {
+    fontSize: 12,
+    letterSpacing: 1.2,
+    opacity: 0.7,
+  },
+
+  title: {
+    fontSize: 36,
+    fontWeight: 800,
+    margin: "8px 0",
+  },
+
+  subtitle: {
+    fontSize: 14,
+    opacity: 0.8,
   },
 
   form: {
     display: "flex",
     flexDirection: "column",
-    gap: "12px",
-    marginTop: "10px",
+    gap: 16,
+  },
+
+  fieldGroup: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 6,
+  },
+
+  label: {
+    fontWeight: 600,
+    fontSize: 13,
+  },
+
+  input: {
+    padding: "12px",
+    borderRadius: 10,
+    border: "1px solid rgba(255,255,255,0.2)",
+    background: "rgba(255,255,255,0.08)",
+    color: "white",
   },
 
   passwordWrapper: {
     display: "flex",
-    alignItems: "center",
-    gap: "5px",
+    gap: 8,
+  },
+
+  passwordInput: {
+    flex: 1,
+    padding: "12px",
+    borderRadius: 10,
+    border: "1px solid rgba(255,255,255,0.2)",
+    background: "rgba(255,255,255,0.08)",
+    color: "white",
   },
 
   toggleBtn: {
-    padding: "5px 8px",
+    padding: "0 12px",
+    borderRadius: 10,
+    border: "1px solid rgba(255,255,255,0.2)",
+    background: "rgba(255,255,255,0.08)",
+    color: "white",
     cursor: "pointer",
   },
 
   error: {
-    color: "red",
-    fontSize: "0.8rem",
-    textAlign: "left",
+    color: "#ffb3b3",
+    fontSize: 12,
   },
 
   serverError: {
-    color: "red",
-    fontSize: "0.9rem",
-    textAlign: "left",
+    color: "#ff8080",
+    fontSize: 13,
+  },
+
+  submitBtn: {
+    marginTop: 8,
+    padding: "12px",
+    borderRadius: 10,
+    border: "none",
+    background: "white",
+    color: "black",
+    fontWeight: 700,
+    cursor: "pointer",
+  },
+
+  footer: {
+    marginTop: 18,
+    display: "flex",
+    justifyContent: "center",
+    gap: 6,
+  },
+
+  footerText: {
+    fontSize: 13,
+    opacity: 0.8,
+  },
+
+  footerLink: {
+    color: "white",
+    fontWeight: 600,
+    textDecoration: "underline",
   },
 };
 

@@ -17,38 +17,27 @@ function App() {
       <Navbar />
 
       <Routes>
-        {/* Home */}
         <Route path="/" element={<HomePage />} />
-
-        {/* Explore */}
         <Route path="/explore" element={<MoviePage />} />
-
-        {/* Movie Detail (new canonical route) */}
         <Route path="/movies/:id" element={<MovieDetail />} />
-
-        {/* Old route - redirect to canonical route */}
         <Route path="/video/:id" element={<VideoRedirect />} />
-
-        {/* Booking */}
         <Route path="/booking/:title" element={<BookingPage />} />
 
-        {/* Auth */}
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/editprofile" element={<EditProfilePage />} />
-
-        {/* 404 fallback (must be last) */}
-        <Route path="*" element={<Navigate to="/" replace />} />
         <Route path="/ResetPassword" element={<ResetPasswordPage />} />
         <Route path="/admin" element={<AdminPortalPage />} />
+
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </div>
   );
 }
 
 function VideoRedirect() {
-  const url = window.location.pathname; // e.g. "/video/abc123"
-  const id = url.split("/").pop();      // "abc123"
+  const url = window.location.pathname;
+  const id = url.split("/").pop();
   return <Navigate to={`/movies/${id}`} replace />;
 }
 
