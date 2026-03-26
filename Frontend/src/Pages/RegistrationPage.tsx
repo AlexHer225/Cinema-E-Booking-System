@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { Link } from "react-router-dom";
 
 type FormData = {
   name: string;
@@ -44,6 +45,7 @@ const RegisterPage: React.FC = () => {
   const [serverError, setServerError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -131,8 +133,6 @@ const RegisterPage: React.FC = () => {
         email: "",
         password: "",
       });
-
-      console.log("Signup success:", data);
     } catch (error) {
       setServerError("Could not connect to the server.");
       console.error("Signup error:", error);
@@ -144,117 +144,293 @@ const RegisterPage: React.FC = () => {
   return (
     <div style={styles.page}>
       <div style={{ ...styles.bg, backgroundImage: `url(${bgUrl})` }} />
+      <div style={styles.overlay} />
 
-      <div style={styles.container}>
-        <h2>Register</h2>
+      <div style={styles.wrapper}>
+        <div style={styles.card}>
+          <div style={styles.headerBlock}>
+            <p style={styles.eyebrow}>Join CineScope</p>
+            <h1 style={styles.title}>Create Account</h1>
+            <p style={styles.subtitle}>
+              Sign up to book tickets, manage your profile, and enjoy the full
+              movie experience.
+            </p>
+          </div>
 
-        <form onSubmit={handleSubmit} style={styles.form}>
-          <input
-            type="text"
-            name="name"
-            placeholder="Full Name"
-            value={formData.name}
-            onChange={handleChange}
-          />
-          {errors.name && <span style={styles.error}>{errors.name}</span>}
+          <form onSubmit={handleSubmit} style={styles.form}>
+            <div style={styles.fieldGroup}>
+              <label style={styles.label}>Full Name</label>
+              <input
+                type="text"
+                name="name"
+                placeholder="Enter your full name"
+                value={formData.name}
+                onChange={handleChange}
+                style={styles.input}
+              />
+              {errors.name && <span style={styles.error}>{errors.name}</span>}
+            </div>
 
-          <input
-            type="text"
-            name="username"
-            placeholder="Username"
-            value={formData.username}
-            onChange={handleChange}
-          />
-          {errors.username && (
-            <span style={styles.error}>{errors.username}</span>
-          )}
+            <div style={styles.fieldGroup}>
+              <label style={styles.label}>Username</label>
+              <input
+                type="text"
+                name="username"
+                placeholder="Choose a username"
+                value={formData.username}
+                onChange={handleChange}
+                style={styles.input}
+              />
+              {errors.username && (
+                <span style={styles.error}>{errors.username}</span>
+              )}
+            </div>
 
-          <input
-            type="email"
-            name="email"
-            placeholder="Email Address"
-            value={formData.email}
-            onChange={handleChange}
-          />
-          {errors.email && <span style={styles.error}>{errors.email}</span>}
+            <div style={styles.fieldGroup}>
+              <label style={styles.label}>Email</label>
+              <input
+                type="email"
+                name="email"
+                placeholder="Enter your email address"
+                value={formData.email}
+                onChange={handleChange}
+                style={styles.input}
+              />
+              {errors.email && <span style={styles.error}>{errors.email}</span>}
+            </div>
 
-          <input
-            type="password"
-            name="password"
-            placeholder="Password"
-            value={formData.password}
-            onChange={handleChange}
-          />
-          {errors.password && (
-            <span style={styles.error}>{errors.password}</span>
-          )}
+            <div style={styles.fieldGroup}>
+              <label style={styles.label}>Password</label>
+              <div style={styles.passwordWrapper}>
+                <input
+                  type={showPassword ? "text" : "password"}
+                  name="password"
+                  placeholder="Create a password"
+                  value={formData.password}
+                  onChange={handleChange}
+                  style={styles.passwordInput}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  style={styles.toggleBtn}
+                >
+                  {showPassword ? "Hide" : "Show"}
+                </button>
+              </div>
+              {errors.password && (
+                <span style={styles.error}>{errors.password}</span>
+              )}
+            </div>
 
-          {serverError && <div style={styles.serverError}>{serverError}</div>}
-          {successMessage && <div style={styles.success}>{successMessage}</div>}
+            {serverError && (
+              <div style={styles.serverError}>{serverError}</div>
+            )}
 
-          <button type="submit" disabled={isSubmitting}>
-            {isSubmitting ? "Creating Account..." : "Create Account"}
-          </button>
-        </form>
+            {successMessage && (
+              <div style={styles.success}>{successMessage}</div>
+            )}
+
+            <button type="submit" disabled={isSubmitting} style={styles.submitBtn}>
+              {isSubmitting ? "Creating Account..." : "Create Account"}
+            </button>
+          </form>
+
+          <div style={styles.footer}>
+            <span style={styles.footerText}>Already have an account?</span>
+            <Link to="/login" style={styles.footerLink}>
+              Log In
+            </Link>
+          </div>
+        </div>
       </div>
     </div>
   );
 };
 
-const styles: { [key: string]: React.CSSProperties } = {
+const styles: Record<string, React.CSSProperties> = {
   page: {
     position: "relative",
     minHeight: "100vh",
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
+    width: "100%",
   },
 
   bg: {
     position: "fixed",
-    top: 0,
-    left: 0,
-    width: "100vw",
-    height: "100vh",
+    inset: 0,
     backgroundSize: "cover",
     backgroundPosition: "center",
-    backgroundRepeat: "no-repeat",
+    zIndex: -2,
+  },
+
+  overlay: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(0,0,0,0.55)",
     zIndex: -1,
   },
 
-  container: {
+  wrapper: {
+    height: "calc(100vh - 70px)",
+    marginTop: 70,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "0 24px",
+    boxSizing: "border-box",
+  },
+
+  card: {
     width: "100%",
-    maxWidth: "400px",
-    padding: "25px",
-    borderRadius: "10px",
+    maxWidth: 520,
+    background: "rgba(10,10,12,0.75)",
+    border: "1px solid rgba(255,255,255,0.12)",
+    borderRadius: 20,
+    backdropFilter: "blur(14px)",
+    WebkitBackdropFilter: "blur(14px)",
+    padding: "32px",
+    color: "white",
+    boxShadow: "0 20px 50px rgba(0,0,0,0.4)",
+  },
+
+  headerBlock: {
     textAlign: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.9)",
-    boxShadow: "0 4px 20px rgba(0,0,0,0.2)",
+    marginBottom: 20,
+  },
+
+  eyebrow: {
+    fontSize: 12,
+    letterSpacing: 1.2,
+    opacity: 0.7,
+    textTransform: "uppercase",
+    fontWeight: 700,
+  },
+
+  title: {
+    fontSize: 36,
+    fontWeight: 800,
+    margin: "8px 0",
+    lineHeight: 1.1,
+  },
+
+  subtitle: {
+    fontSize: 14,
+    opacity: 0.8,
+    lineHeight: 1.5,
+    margin: 0,
   },
 
   form: {
     display: "flex",
     flexDirection: "column",
-    gap: "12px",
-    marginTop: "10px",
+    gap: 16,
+  },
+
+  fieldGroup: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 6,
+  },
+
+  label: {
+    fontWeight: 600,
+    fontSize: 13,
+    color: "white",
+  },
+
+  input: {
+    width: "100%",
+    boxSizing: "border-box",
+    padding: "12px",
+    borderRadius: 10,
+    border: "1px solid rgba(255,255,255,0.2)",
+    background: "rgba(255,255,255,0.08)",
+    color: "white",
+    outline: "none",
+    fontSize: 14,
+  },
+
+  passwordWrapper: {
+    display: "flex",
+    gap: 8,
+  },
+
+  passwordInput: {
+    flex: 1,
+    minWidth: 0,
+    boxSizing: "border-box",
+    padding: "12px",
+    borderRadius: 10,
+    border: "1px solid rgba(255,255,255,0.2)",
+    background: "rgba(255,255,255,0.08)",
+    color: "white",
+    outline: "none",
+    fontSize: 14,
+  },
+
+  toggleBtn: {
+    padding: "0 12px",
+    borderRadius: 10,
+    border: "1px solid rgba(255,255,255,0.2)",
+    background: "rgba(255,255,255,0.08)",
+    color: "white",
+    cursor: "pointer",
+    fontWeight: 600,
   },
 
   error: {
-    color: "red",
-    fontSize: "0.8rem",
-    textAlign: "left",
+    color: "#ffb3b3",
+    fontSize: 12,
   },
 
   serverError: {
-    color: "red",
-    fontSize: "0.9rem",
-    textAlign: "left",
+    color: "#ff8080",
+    fontSize: 13,
+    background: "rgba(255, 85, 85, 0.12)",
+    border: "1px solid rgba(255, 120, 120, 0.24)",
+    borderRadius: 10,
+    padding: "10px 12px",
   },
 
   success: {
-    color: "green",
-    fontSize: "0.9rem",
-    textAlign: "left",
+    color: "#bff5c7",
+    fontSize: 13,
+    background: "rgba(80, 200, 120, 0.12)",
+    border: "1px solid rgba(120, 220, 150, 0.24)",
+    borderRadius: 10,
+    padding: "10px 12px",
+    lineHeight: 1.5,
+  },
+
+  submitBtn: {
+    marginTop: 8,
+    padding: "12px",
+    borderRadius: 10,
+    border: "none",
+    background: "white",
+    color: "black",
+    fontWeight: 700,
+    cursor: "pointer",
+    fontSize: 14,
+  },
+
+  footer: {
+    marginTop: 18,
+    display: "flex",
+    justifyContent: "center",
+    gap: 6,
+    flexWrap: "wrap",
+  },
+
+  footerText: {
+    fontSize: 13,
+    opacity: 0.8,
+  },
+
+  footerLink: {
+    color: "white",
+    fontWeight: 600,
+    textDecoration: "underline",
   },
 };
 
