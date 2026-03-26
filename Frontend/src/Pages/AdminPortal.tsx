@@ -35,7 +35,7 @@ export default function AdminMoviesPage() {
     discount: "",
   });
 
-  /* ================= ADD MOVIE ================= */
+
   const handleAddMovie = () => {
     if (!newMovie.title || !newMovie.showtime || !newMovie.rating) {
       alert("All movie fields are required");
@@ -53,7 +53,7 @@ export default function AdminMoviesPage() {
     setShowMovieModal(false);
   };
 
-  /* ================= ADD PROMOTION ================= */
+
   const handleAddPromotion = () => {
     if (!newPromo.movieTitle || !newPromo.discount) {
       alert("All promotion fields are required");
@@ -78,7 +78,7 @@ export default function AdminMoviesPage() {
       <div style={styles.container}>
         <h2>Admin Management</h2>
 
-        {/* BUTTONS */}
+      
         <div style={{ display: "flex", gap: "10px", justifyContent: "center" }}>
           <button onClick={() => setShowMovieModal(true)} style={styles.addBtn}>
             Add Movie
@@ -89,7 +89,6 @@ export default function AdminMoviesPage() {
           </button>
         </div>
 
-        {/* MOVIES LIST */}
         <h3>Movies</h3>
         <ul style={styles.list}>
           {movies.map((m) => (
@@ -201,6 +200,7 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     justifyContent: "center",
     alignItems: "center",
+    
   },
 
   bg: {
@@ -211,25 +211,43 @@ const styles: Record<string, React.CSSProperties> = {
     height: "100vh",
     backgroundSize: "cover",
     backgroundPosition: "center",
+    backgroundRepeat: "no-repeat",
     zIndex: -1,
   },
 
   container: {
     width: "100%",
     maxWidth: "650px",
-    padding: "25px",
-    backgroundColor: "rgba(255,255,255,0.92)",
-    borderRadius: "10px",
+    padding: "28px",
+    borderRadius: "16px",
     textAlign: "center",
+
+   
+    backdropFilter: "blur(14px)",
+    WebkitBackdropFilter: "blur(14px)",
+    background: "rgba(0, 0, 0, 0.75)",
+    border: "1px solid rgba(255,255,255,0.15)",
+    boxShadow: "0 10px 40px rgba(0,0,0,0.5)",
+
+    color: "white",
   },
 
   addBtn: {
-    padding: "10px",
+    padding: "12px 16px",
+    borderRadius: "10px",
+    border: "none",
+    background: "white",
+    color: "black",
     cursor: "pointer",
+    fontWeight: 700,
+    fontSize: "14px",
   },
 
   list: {
     textAlign: "left",
+    display: "flex",
+    flexDirection: "column",
+    gap: "10px",
   },
 
   modalOverlay: {
@@ -245,17 +263,64 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   modal: {
-    backgroundColor: "white",
+    background: "rgba(0,0,0,0.85)",
     padding: "20px",
-    borderRadius: "10px",
-    width: "300px",
+    borderRadius: "16px",
+    width: "320px",
     display: "flex",
     flexDirection: "column",
-    gap: "10px",
+    gap: "12px",
+    border: "1px solid rgba(255,255,255,0.18)",
+    boxShadow: "0 8px 30px rgba(0,0,0,0.5)",
+    color: "white",
   },
 
   modalBtns: {
     display: "flex",
     justifyContent: "space-between",
+    gap: "10px",
+  },
+
+  input: {
+    padding: "12px",
+    borderRadius: "10px",
+    border: "1px solid rgba(255,255,255,0.18)",
+    background: "rgba(255,255,255,0.08)",
+    color: "white",
+    outline: "none",
+    fontSize: "14px",
+  },
+
+  label: {
+    fontSize: "12px",
+    fontWeight: 700,
+    color: "white",
+    letterSpacing: 0.4,
+  },
+
+  saveBtn: {
+    padding: "12px",
+    background: "white",
+    color: "black",
+    border: "none",
+    borderRadius: "10px",
+    cursor: "pointer",
+    fontWeight: 700,
+    fontSize: "14px",
+  },
+
+  
+
+  error: {
+    color: "#ff6b6b",
+    fontSize: "0.8rem",
+    textAlign: "left",
+  },
+
+  success: {
+    color: "#4cd964",
+    fontSize: "0.9rem",
+    textAlign: "left",
   },
 };
+

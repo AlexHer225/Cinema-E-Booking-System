@@ -155,7 +155,7 @@ export default function EditProfilePage() {
         favorites: [...user.favorites, movie],
       });
     } catch {
-      // fallback if API fails
+      
       setUser({
         ...user,
         favorites: [
@@ -177,7 +177,7 @@ export default function EditProfilePage() {
       <div style={styles.container}>
         <h2>Edit Profile</h2>
 
-        {/* Optional fallback notice */}
+        
         {user.username === "johndoe" && (
           <p style={{ color: "orange" }}>
             ⚠ Using demo profile (not saved)
@@ -205,7 +205,7 @@ export default function EditProfilePage() {
           <input value={user.email} disabled />
         </div>
 
-        {/* ADDRESS */}
+       
         <div style={styles.section}>
           <h3>Address</h3>
 
@@ -322,7 +322,9 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     justifyContent: "center",
     alignItems: "center",
+    
   },
+
 
   bg: {
     position: "fixed",
@@ -339,31 +341,72 @@ const styles: Record<string, React.CSSProperties> = {
   container: {
     width: "100%",
     maxWidth: 500,
-    padding: 25,
+    padding: 28,
     display: "flex",
     flexDirection: "column",
     gap: 20,
-    borderRadius: 10,
-    backgroundColor: "rgba(255,255,255,0.92)",
-    boxShadow: "0 4px 20px rgba(0,0,0,0.25)",
+    borderRadius: 16,
+
+    
+    backdropFilter: "blur(14px)",
+    WebkitBackdropFilter: "blur(14px)",
+    background: "rgba(0, 0, 0, 0.75)",
+    border: "1px solid rgba(255,255,255,0.15)",
+    boxShadow: "0 10px 40px rgba(0,0,0,0.5)",
+
+    color: "white",
   },
 
   section: {
     display: "flex",
     flexDirection: "column",
-    gap: 8,
-    border: "1px solid #ccc",
-    padding: 10,
-    borderRadius: 8,
-    backgroundColor: "rgba(255,255,255,0.85)",
+    gap: 12,
+    padding: 12,
+    borderRadius: 12,
+    background: "rgba(255,255,255,0.08)",
+    border: "1px solid rgba(255,255,255,0.18)",
+  },
+
+  label: {
+    fontSize: 12,
+    fontWeight: 700,
+    color: "white",
+    letterSpacing: 0.4,
+    
+  },
+
+  input: {
+    padding: "12px",
+    borderRadius: 10,
+    border: "1px solid rgba(255,255,255,0.18)",
+    background: "rgba(255,255,255,0.08)",
+    color: "white",
+    outline: "none",
+    fontSize: "14px",
   },
 
   saveBtn: {
-    padding: 12,
-    background: "black",
-    color: "white",
+    padding: "12px",
+    background: "white",
+    color: "black",
     border: "none",
-    borderRadius: 6,
+    borderRadius: 10,
     cursor: "pointer",
+    fontWeight: 700,
+    fontSize: "14px",
+    marginTop: 10,
+  },
+
+  error: {
+    color: "#ff6b6b",
+    fontSize: "0.8rem",
+    textAlign: "left",
+  },
+
+  success: {
+    color: "#4cd964",
+    fontSize: "0.9rem",
+    textAlign: "left",
   },
 };
+
