@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 type SortBy = "Relevance" | "Title (A–Z)" | "Rating (High→Low)";
 
@@ -32,6 +32,34 @@ export default function Navbar() {
     sortBy: "Relevance",
   });
 
+    const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
+    const navigate = useNavigate();
+
+    
+
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    setIsLoggedIn(false);
+    navigate("/");
+  };
+
+ useEffect(() => {
+  const checkAuth = () => {
+    const token = localStorage.getItem("token");
+    setIsLoggedIn(!!token);
+  };
+
+  checkAuth(); // run on mount
+
+  window.addEventListener("storage", checkAuth); // cross-tab updates
+  window.addEventListener("focus", checkAuth);   // when user returns to tab
+
+  return () => {
+    window.removeEventListener("storage", checkAuth);
+    window.removeEventListener("focus", checkAuth);
+  };
+}, []);
+
   return (
     <header style={styles.header}>
       <div style={styles.inner}>
@@ -53,13 +81,27 @@ export default function Navbar() {
         <div style={styles.right}>
           <SearchDropdown filters={filters} onChange={setFilters} />
 
-          <Link to="/login" style={styles.navBtn}>
-            Log In
-          </Link>
+          {!isLoggedIn ? (
+  <>
+            <Link to="/login" style={styles.navBtn}>
+              Log In
+            </Link>
 
-          <Link to="/register" style={styles.navBtn}>
-            Sign Up
-          </Link>
+            <Link to="/register" style={styles.navBtn}>
+              Sign Up
+            </Link>
+          </>
+        ) : (
+          <>
+            <Link to="/editprofile" style={styles.navBtn}>
+              Edit Profile
+            </Link>
+
+            <button onClick={handleLogout} style={styles.navBtn}>
+              Sign Out
+            </button>
+          </>
+        )}
         </div>
       </div>
     </header>

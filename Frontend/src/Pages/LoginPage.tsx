@@ -119,12 +119,16 @@ const LoginPage: React.FC = () => {
         return;
       }
 
-      localStorage.setItem("access_token", data.access_token);
+     
+      localStorage.setItem("token", data.access_token);
       localStorage.setItem("token_type", data.token_type || "bearer");
 
       if (data.user) {
         localStorage.setItem("user", JSON.stringify(data.user));
       }
+
+  
+      window.dispatchEvent(new Event("storage"));
 
       navigate("/");
     } catch (error) {
@@ -217,6 +221,7 @@ const LoginPage: React.FC = () => {
   );
 };
 
+
 const styles: Record<string, React.CSSProperties> = {
   page: {
     position: "relative",
@@ -239,7 +244,7 @@ const styles: Record<string, React.CSSProperties> = {
     zIndex: -1,
   },
 
-  // ✅ PERFECT CENTERING FIX
+ 
   wrapper: {
     height: "calc(100vh - 70px)",
     marginTop: 70,
