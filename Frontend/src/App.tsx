@@ -8,7 +8,7 @@ import BookingPage from "./Pages/BookingPage";
 import LoginPage from "./Pages/LoginPage";
 import RegisterPage from "./Pages/RegistrationPage";
 import EditProfilePage from "./Pages/EditProfile";
-import ResetPasswordPage from "./Pages/ResetPassword";
+import ResetPassword from "./Pages/ResetPassword";
 import AdminPortalPage from "./Pages/AdminPortal";
 import FavoritesPage from "./Pages/FavoritePage";
 
@@ -28,7 +28,7 @@ function App() {
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/editprofile" element={<EditProfilePage />} />
         <Route path="/favorites" element={<FavoritesPage />} />
-        <Route path="/ResetPassword" element={<ResetPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/admin" element={<AdminPortalPage />} />
 
         <Route path="*" element={<Navigate to="/" replace />} />

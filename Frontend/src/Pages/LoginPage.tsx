@@ -22,23 +22,18 @@ type ApiErrorItem = {
 };
 
 const bgUrl = "/images/backgroundImage.jpg";
-const API_BASE_URL =
-  import.meta.env.VITE_API_URL || "http://localhost:8000";
+const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 const getErrorMessage = (data: any) => {
   if (!data) return "Login failed.";
-
   if (typeof data.detail === "string") return data.detail;
-
   if (Array.isArray(data.detail)) {
     return data.detail
       .map((item: ApiErrorItem) => item.msg)
       .filter(Boolean)
       .join(", ");
   }
-
   if (typeof data.message === "string") return data.message;
-
   return "Login failed.";
 };
 
@@ -55,35 +50,31 @@ const LoginPage: React.FC = () => {
   const [serverError, setServerError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // ── Forgot password modal state ──
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotEmailError, setForgotEmailError] = useState("");
+  const [forgotSubmitting, setForgotSubmitting] = useState(false);
+  const [forgotSuccess, setForgotSuccess] = useState("");
+  const [forgotServerError, setForgotServerError] = useState("");
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     const fieldName = name as keyof LoginData;
-
-    setFormData((prev) => ({
-      ...prev,
-      [fieldName]: value,
-    }));
-
-    setErrors((prev) => ({
-      ...prev,
-      [fieldName]: undefined,
-    }));
-
+    setFormData((prev) => ({ ...prev, [fieldName]: value }));
+    setErrors((prev) => ({ ...prev, [fieldName]: undefined }));
     setServerError("");
   };
 
   const validate = () => {
     const newErrors: Partial<LoginData> = {};
-
     if (!formData.username.trim()) newErrors.username = "Username is required";
     if (!formData.password) newErrors.password = "Password is required";
-
     return newErrors;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
     setServerError("");
 
     const validationErrors = validate();
@@ -98,9 +89,7 @@ const LoginPage: React.FC = () => {
     try {
       const response = await fetch(`${API_BASE_URL}/login`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           username: formData.username.trim(),
           password: formData.password,
@@ -121,10 +110,7 @@ const LoginPage: React.FC = () => {
 
       localStorage.setItem("access_token", data.access_token);
       localStorage.setItem("token_type", data.token_type || "bearer");
-
-      if (data.user) {
-        localStorage.setItem("user", JSON.stringify(data.user));
-      }
+      if (data.user) localStorage.setItem("user", JSON.stringify(data.user));
 
       window.dispatchEvent(new Event("storage"));
       navigate("/");
@@ -133,6 +119,61 @@ const LoginPage: React.FC = () => {
       setServerError("Could not connect to the server.");
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // ── Forgot password handlers ──
+  const openForgotModal = () => {
+    setForgotEmail("");
+    setForgotEmailError("");
+    setForgotSuccess("");
+    setForgotServerError("");
+    setShowForgotModal(true);
+  };
+
+  const closeForgotModal = () => {
+    setShowForgotModal(false);
+  };
+
+  const handleForgotSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setForgotEmailError("");
+    setForgotServerError("");
+    setForgotSuccess("");
+
+    if (!forgotEmail.trim()) {
+      setForgotEmailError("Email is required.");
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(forgotEmail.trim())) {
+      setForgotEmailError("Please enter a valid email address.");
+      return;
+    }
+
+    setForgotSubmitting(true);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/forgot-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: forgotEmail.trim().toLowerCase() }),
+      });
+
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        setForgotServerError(getErrorMessage(data));
+        return;
+      }
+
+      setForgotSuccess(
+        data?.message ||
+          "If that email is registered you will receive a reset link shortly."
+      );
+    } catch {
+      setForgotServerError("Could not connect to the server.");
+    } finally {
+      setForgotSubmitting(false);
     }
   };
 
@@ -168,7 +209,16 @@ const LoginPage: React.FC = () => {
             </div>
 
             <div style={styles.fieldGroup}>
-              <label style={styles.label}>Password</label>
+              <div style={styles.labelRow}>
+                <label style={styles.label}>Password</label>
+                <button
+                  type="button"
+                  onClick={openForgotModal}
+                  style={styles.forgotLink}
+                >
+                  Forgot password?
+                </button>
+              </div>
               <div style={styles.passwordWrapper}>
                 <input
                   type={showPassword ? "text" : "password"}
@@ -205,13 +255,75 @@ const LoginPage: React.FC = () => {
           </form>
 
           <div style={styles.footer}>
-            <span style={styles.footerText}>Don’t have an account?</span>
+            <span style={styles.footerText}>Don't have an account?</span>
             <Link to="/register" style={styles.footerLink}>
               Sign Up
             </Link>
           </div>
         </div>
       </div>
+
+      {/* ── Forgot Password Modal ── */}
+      {showForgotModal && (
+        <div style={styles.modalBackdrop} onClick={closeForgotModal}>
+          <div
+            style={styles.modal}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button style={styles.modalClose} onClick={closeForgotModal}>
+              ✕
+            </button>
+
+            <h2 style={styles.modalTitle}>Reset Password</h2>
+            <p style={styles.modalSubtitle}>
+              Enter your email and we'll send you a reset link.
+            </p>
+
+            {forgotSuccess ? (
+              <div style={styles.successBox}>
+                <span style={styles.successIcon}>✓</span>
+                <p style={styles.successText}>{forgotSuccess}</p>
+                <button style={styles.submitBtn} onClick={closeForgotModal}>
+                  Back to Login
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleForgotSubmit} style={styles.form}>
+                <div style={styles.fieldGroup}>
+                  <label style={styles.label}>Email address</label>
+                  <input
+                    type="email"
+                    placeholder="you@example.com"
+                    value={forgotEmail}
+                    onChange={(e) => {
+                      setForgotEmail(e.target.value);
+                      setForgotEmailError("");
+                      setForgotServerError("");
+                    }}
+                    style={styles.input}
+                    autoFocus
+                  />
+                  {forgotEmailError && (
+                    <span style={styles.error}>{forgotEmailError}</span>
+                  )}
+                </div>
+
+                {forgotServerError && (
+                  <div style={styles.serverError}>{forgotServerError}</div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={forgotSubmitting}
+                  style={styles.submitBtn}
+                >
+                  {forgotSubmitting ? "Sending..." : "Send Reset Link"}
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -294,9 +406,26 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 6,
   },
 
+  // Row that holds the label + "Forgot password?" side by side
+  labelRow: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+
   label: {
     fontWeight: 600,
     fontSize: 13,
+  },
+
+  forgotLink: {
+    background: "none",
+    border: "none",
+    color: "rgba(255,255,255,0.65)",
+    fontSize: 12,
+    cursor: "pointer",
+    padding: 0,
+    textDecoration: "underline",
   },
 
   input: {
@@ -349,6 +478,7 @@ const styles: Record<string, React.CSSProperties> = {
     color: "black",
     fontWeight: 700,
     cursor: "pointer",
+    width: "100%",
   },
 
   footer: {
@@ -367,6 +497,78 @@ const styles: Record<string, React.CSSProperties> = {
     color: "white",
     fontWeight: 600,
     textDecoration: "underline",
+  },
+
+  // Modal styles
+  modalBackdrop: {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(0,0,0,0.7)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 100,
+    padding: "0 24px",
+  },
+
+  modal: {
+    position: "relative",
+    width: "100%",
+    maxWidth: 420,
+    background: "rgba(18,18,22,0.97)",
+    border: "1px solid rgba(255,255,255,0.14)",
+    borderRadius: 20,
+    backdropFilter: "blur(16px)",
+    padding: "36px 32px 32px",
+    color: "white",
+    boxShadow: "0 24px 60px rgba(0,0,0,0.6)",
+  },
+
+  modalClose: {
+    position: "absolute",
+    top: 14,
+    right: 16,
+    background: "none",
+    border: "none",
+    color: "rgba(255,255,255,0.5)",
+    fontSize: 18,
+    cursor: "pointer",
+    lineHeight: 1,
+  },
+
+  modalTitle: {
+    fontSize: 24,
+    fontWeight: 800,
+    marginBottom: 6,
+    marginTop: 0,
+  },
+
+  modalSubtitle: {
+    fontSize: 13,
+    opacity: 0.7,
+    marginBottom: 24,
+    marginTop: 0,
+  },
+
+  successBox: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: 12,
+    textAlign: "center",
+    paddingTop: 8,
+  },
+
+  successIcon: {
+    fontSize: 40,
+    color: "#6ee7b7",
+  },
+
+  successText: {
+    fontSize: 14,
+    opacity: 0.85,
+    lineHeight: 1.5,
+    margin: 0,
   },
 };
 
