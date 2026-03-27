@@ -6,7 +6,7 @@ const API_BASE =
   "http://localhost:8000";
 
 type Movie = {
-  _id: string;
+  id: string;
   title: string;
   rating?: string;
   description?: string;
@@ -26,12 +26,12 @@ function toYouTubeEmbed(url: string): string {
 
     const u = new URL(url);
     if (u.hostname.includes("youtu.be")) {
-      const id = u.pathname.replace("/", "");
-      return `https://www.youtube.com/embed/${id}`;
+      const vid = u.pathname.replace("/", "");
+      return `https://www.youtube.com/embed/${vid}`;
     }
     if (u.hostname.includes("youtube.com")) {
-      const id = u.searchParams.get("v");
-      if (id) return `https://www.youtube.com/embed/${id}`;
+      const vid = u.searchParams.get("v");
+      if (vid) return `https://www.youtube.com/embed/${vid}`;
     }
   } catch {}
   return url;
@@ -42,6 +42,7 @@ export default function MovieDetail() {
   const { id } = useParams<{ id: string }>();
   const [state, setState] = useState<ApiState>({ status: "loading" });
   const [isFavorite, setIsFavorite] = useState(false);
+  const [favoriteLoading, setFavoriteLoading] = useState(false);
 
   const showtimesByMovieId: Record<string, string[]> = useMemo(
     () => ({
@@ -70,9 +71,7 @@ export default function MovieDetail() {
 
       try {
         const res = await fetch(`${API_BASE}/movies/${id}`);
-        if (!res.ok) {
-          throw new Error(`Failed to load movie (${res.status})`);
-        }
+        if (!res.ok) throw new Error(`Failed to load movie (${res.status})`);
 
         const movie: Movie = await res.json();
         if (!cancelled) setState({ status: "success", movie });
@@ -88,8 +87,73 @@ export default function MovieDetail() {
     };
   }, [id]);
 
-  const handleFavoriteClick = () => {
-    setIsFavorite((prev) => !prev);
+  useEffect(() => {
+    if (!id) return;
+
+    const checkSaved = async () => {
+      try {
+        const token = localStorage.getItem("access_token");
+        if (!token) return;
+
+        const res = await fetch(`${API_BASE}/me/saved-movies`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!res.ok) return;
+
+        const data: { saved_movie_ids: string[] } = await res.json();
+        setIsFavorite((data.saved_movie_ids || []).includes(id));
+      } catch {
+        // leave silent for now
+      }
+    };
+
+    checkSaved();
+  }, [id]);
+
+  const handleFavoriteClick = async () => {
+    if (!id) return;
+
+    const token = localStorage.getItem("access_token");
+    if (!token) {
+      alert("Please log in to save favorite movies.");
+      return;
+    }
+
+    try {
+      setFavoriteLoading(true);
+
+      if (isFavorite) {
+        const res = await fetch(`${API_BASE}/me/saved-movies/${id}`, {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!res.ok) throw new Error("Failed to remove favorite");
+        setIsFavorite(false);
+      } else {
+        const res = await fetch(`${API_BASE}/me/saved-movies`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ movie_id: id }),
+        });
+
+        if (!res.ok) throw new Error("Failed to save favorite");
+        setIsFavorite(true);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Could not update favorites.");
+    } finally {
+      setFavoriteLoading(false);
+    }
   };
 
   if (state.status === "loading") {
@@ -105,9 +169,7 @@ export default function MovieDetail() {
       <div style={styles.page}>
         <div style={styles.container}>
           <p style={{ color: "white" }}>Couldn’t load movie.</p>
-          <p style={{ color: "rgba(255,255,255,0.75)" }}>
-            {state.message}
-          </p>
+          <p style={{ color: "rgba(255,255,255,0.75)" }}>{state.message}</p>
           <Link to="/" style={styles.backLink}>
             ← Back to Home
           </Link>
@@ -129,11 +191,7 @@ export default function MovieDetail() {
         <div style={styles.grid}>
           <div>
             {movie.poster ? (
-              <img
-                src={movie.poster}
-                alt={movie.title}
-                style={styles.poster}
-              />
+              <img src={movie.poster} alt={movie.title} style={styles.poster} />
             ) : (
               <div style={styles.posterPlaceholder}>No poster</div>
             )}
@@ -143,9 +201,7 @@ export default function MovieDetail() {
             <h1 style={styles.title}>{movie.title}</h1>
 
             <div style={styles.metaRow}>
-              {movie.rating && (
-                <span style={styles.pill}>{movie.rating}</span>
-              )}
+              {movie.rating && <span style={styles.pill}>{movie.rating}</span>}
               {movie.genre &&
                 movie.genre.map((g) => (
                   <span key={g} style={styles.pill}>
@@ -157,13 +213,19 @@ export default function MovieDetail() {
             <div style={styles.actionRow}>
               <button
                 onClick={handleFavoriteClick}
+                disabled={favoriteLoading}
                 style={{
                   ...styles.favoriteBtn,
                   background: isFavorite ? "white" : "rgba(255,255,255,0.08)",
                   color: isFavorite ? "black" : "white",
+                  opacity: favoriteLoading ? 0.7 : 1,
                 }}
               >
-                {isFavorite ? "★ Favorited" : "☆ Add to Favorites"}
+                {favoriteLoading
+                  ? "Saving..."
+                  : isFavorite
+                  ? "★ Favorited"
+                  : "☆ Add to Favorites"}
               </button>
             </div>
 
@@ -190,10 +252,6 @@ export default function MovieDetail() {
                   </button>
                 ))}
               </div>
-              <p style={styles.sectionHint}>
-                (Hardcoded for now — later you can store showtimes in
-                the DB too.)
-              </p>
             </div>
 
             <div style={styles.section}>
@@ -210,9 +268,7 @@ export default function MovieDetail() {
                   />
                 </div>
               ) : (
-                <p style={styles.sectionHint}>
-                  No trailer available.
-                </p>
+                <p style={styles.sectionHint}>No trailer available.</p>
               )}
             </div>
           </div>
