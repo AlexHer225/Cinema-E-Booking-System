@@ -41,6 +41,7 @@ export default function MovieDetail() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const [state, setState] = useState<ApiState>({ status: "loading" });
+  const [isFavorite, setIsFavorite] = useState(false);
 
   const showtimesByMovieId: Record<string, string[]> = useMemo(
     () => ({
@@ -86,6 +87,10 @@ export default function MovieDetail() {
       cancelled = true;
     };
   }, [id]);
+
+  const handleFavoriteClick = () => {
+    setIsFavorite((prev) => !prev);
+  };
 
   if (state.status === "loading") {
     return (
@@ -147,6 +152,19 @@ export default function MovieDetail() {
                     {g}
                   </span>
                 ))}
+            </div>
+
+            <div style={styles.actionRow}>
+              <button
+                onClick={handleFavoriteClick}
+                style={{
+                  ...styles.favoriteBtn,
+                  background: isFavorite ? "white" : "rgba(255,255,255,0.08)",
+                  color: isFavorite ? "black" : "white",
+                }}
+              >
+                {isFavorite ? "★ Favorited" : "☆ Add to Favorites"}
+              </button>
             </div>
 
             {movie.description && (
@@ -270,6 +288,22 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "6px 10px",
     fontWeight: 800,
     color: "rgba(255,255,255,0.92)",
+  },
+  actionRow: {
+    display: "flex",
+    gap: 12,
+    marginBottom: 18,
+    flexWrap: "wrap",
+  },
+  favoriteBtn: {
+    padding: "10px 14px",
+    borderRadius: 12,
+    border: "1px solid rgba(255,255,255,0.18)",
+    background: "rgba(255,255,255,0.08)",
+    color: "white",
+    cursor: "pointer",
+    fontWeight: 800,
+    fontSize: 14,
   },
   description: {
     margin: "0 0 18px",
