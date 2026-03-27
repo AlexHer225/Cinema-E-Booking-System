@@ -19,6 +19,7 @@ type PaymentCard = {
   expiry_month: number;
   expiry_year: number;
   cvv?: string;
+  isNew?: boolean;
 };
 
 type Movie = {
@@ -57,6 +58,7 @@ export default function EditProfilePage() {
       try {
         setLoading(true);
         setServerError("");
+        setSuccessMessage("");
 
         const [profileRes, cardsRes, favoritesRes] = await Promise.all([
           fetch(`${API_BASE}/me/profile`, {
@@ -87,7 +89,16 @@ export default function EditProfilePage() {
           address: profileData.address || null,
         });
 
-        setCards(cardsData.payment_cards || []);
+        setCards(
+          (cardsData.payment_cards || []).map((card: any) => ({
+            cardholder_name: card.cardholder_name || "",
+            last4: card.last4 || "",
+            expiry_month: Number(card.expiry_month) || new Date().getMonth() + 1,
+            expiry_year: Number(card.expiry_year) || new Date().getFullYear(),
+            isNew: false,
+          }))
+        );
+
         setFavorites(
           (favoritesData || []).map((m: any) => ({
             id: m.id,
@@ -167,7 +178,7 @@ export default function EditProfilePage() {
     }
   };
 
-  const saveCard = async (card: PaymentCard, index: number | null) => {
+  const saveCard = async (card: PaymentCard, index: number) => {
     const token = localStorage.getItem("access_token");
     if (!token) {
       setServerError("You must be logged in to save cards.");
@@ -175,11 +186,11 @@ export default function EditProfilePage() {
     }
 
     const payload = {
-      cardholder_name: card.cardholder_name,
-      card_number: card.card_number || "",
+      cardholder_name: card.cardholder_name.trim(),
+      card_number: (card.card_number || "").replace(/\s+/g, ""),
       expiry_month: Number(card.expiry_month),
       expiry_year: Number(card.expiry_year),
-      cvv: card.cvv || "",
+      cvv: (card.cvv || "").trim(),
     };
 
     const isIncomplete =
@@ -194,14 +205,21 @@ export default function EditProfilePage() {
       return;
     }
 
+    if (payload.expiry_month < 1 || payload.expiry_month > 12) {
+      setServerError("Expiry month must be between 1 and 12.");
+      return;
+    }
+
     try {
       setServerError("");
       setSuccessMessage("");
 
+      const isNewCard = !!card.isNew || !card.last4;
+
       const response = await fetch(
-        index === null ? `${API_BASE}/me/cards` : `${API_BASE}/me/cards/${index}`,
+        isNewCard ? `${API_BASE}/me/cards` : `${API_BASE}/me/cards/${index}`,
         {
-          method: index === null ? "POST" : "PUT",
+          method: isNewCard ? "POST" : "PUT",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
@@ -216,7 +234,18 @@ export default function EditProfilePage() {
         throw new Error(data?.detail || "Failed to save card.");
       }
 
-      setCards(data.payment_cards || []);
+      setCards(
+        (data.payment_cards || []).map((savedCard: any) => ({
+          cardholder_name: savedCard.cardholder_name || "",
+          last4: savedCard.last4 || "",
+          expiry_month:
+            Number(savedCard.expiry_month) || new Date().getMonth() + 1,
+          expiry_year:
+            Number(savedCard.expiry_year) || new Date().getFullYear(),
+          isNew: false,
+        }))
+      );
+
       setSuccessMessage("Payment card saved successfully.");
     } catch (err: any) {
       console.error(err);
@@ -234,6 +263,14 @@ export default function EditProfilePage() {
     try {
       setServerError("");
       setSuccessMessage("");
+
+      const card = cards[index];
+
+      if (card?.isNew) {
+        setCards((prev) => prev.filter((_, i) => i !== index));
+        setSuccessMessage("Unsaved card removed.");
+        return;
+      }
 
       const response = await fetch(`${API_BASE}/me/cards/${index}`, {
         method: "DELETE",
@@ -256,12 +293,14 @@ export default function EditProfilePage() {
 
   const addAddress = () => {
     if (!user) return;
+
     if (user.address) {
       setServerError("Only one address can be stored.");
       return;
     }
 
     setServerError("");
+    setSuccessMessage("");
     setUser({
       ...user,
       address: {
@@ -280,6 +319,7 @@ export default function EditProfilePage() {
     }
 
     setServerError("");
+    setSuccessMessage("");
     setCards((prev) => [
       ...prev,
       {
@@ -288,6 +328,7 @@ export default function EditProfilePage() {
         expiry_month: new Date().getMonth() + 1,
         expiry_year: new Date().getFullYear(),
         cvv: "",
+        isNew: true,
       },
     ]);
   };
@@ -331,12 +372,15 @@ export default function EditProfilePage() {
             <p style={styles.eyebrow}>Account Settings</p>
             <h1 style={styles.title}>Edit Profile</h1>
             <p style={styles.subtitle}>
-              Update your information, manage your saved cards, and review your favorite movies.
+              Update your information, manage your saved cards, and review your
+              favorite movies.
             </p>
           </div>
 
           {serverError && <div style={styles.serverError}>{serverError}</div>}
-          {successMessage && <div style={styles.successMessage}>{successMessage}</div>}
+          {successMessage && (
+            <div style={styles.successMessage}>{successMessage}</div>
+          )}
 
           <section style={styles.section}>
             <h2 style={styles.sectionTitle}>Profile Information</h2>
@@ -367,7 +411,11 @@ export default function EditProfilePage() {
               <span style={styles.helperText}>Email cannot be changed.</span>
             </div>
 
-            <button onClick={saveProfile} disabled={isSavingProfile} style={styles.submitBtn}>
+            <button
+              onClick={saveProfile}
+              disabled={isSavingProfile}
+              style={styles.submitBtn}
+            >
               {isSavingProfile ? "Saving..." : "Save Profile"}
             </button>
           </section>
@@ -442,7 +490,11 @@ export default function EditProfilePage() {
                   />
                 </div>
 
-                <button onClick={saveProfile} disabled={isSavingProfile} style={styles.submitBtn}>
+                <button
+                  onClick={saveProfile}
+                  disabled={isSavingProfile}
+                  style={styles.submitBtn}
+                >
                   {isSavingProfile ? "Saving..." : "Save Address"}
                 </button>
               </>
@@ -461,10 +513,12 @@ export default function EditProfilePage() {
 
             <p style={styles.helperText}>Maximum 3 payment cards allowed.</p>
 
-            {cards.length === 0 && <p style={styles.helperText}>No saved cards.</p>}
+            {cards.length === 0 && (
+              <p style={styles.helperText}>No saved cards.</p>
+            )}
 
             {cards.map((card, index) => {
-              const isSavedCard = !!card.last4 && !card.card_number;
+              const isSavedCard = !!card.last4 && !card.isNew;
 
               return (
                 <div key={index} style={styles.cardBox}>
@@ -474,7 +528,10 @@ export default function EditProfilePage() {
                       value={card.cardholder_name || ""}
                       onChange={(e) => {
                         const updated = [...cards];
-                        updated[index] = { ...updated[index], cardholder_name: e.target.value };
+                        updated[index] = {
+                          ...updated[index],
+                          cardholder_name: e.target.value,
+                        };
                         setCards(updated);
                       }}
                       style={styles.input}
@@ -482,7 +539,52 @@ export default function EditProfilePage() {
                   </div>
 
                   {isSavedCard ? (
-                    <div style={styles.maskedCardText}>Saved card ending in {card.last4}</div>
+                    <>
+                      <div style={styles.maskedCardText}>
+                        Saved card ending in {card.last4}
+                      </div>
+
+                      <div style={styles.threeCol}>
+                        <div style={styles.fieldGroup}>
+                          <label style={styles.label}>Exp. Month</label>
+                          <input
+                            type="number"
+                            value={card.expiry_month}
+                            onChange={(e) => {
+                              const updated = [...cards];
+                              updated[index] = {
+                                ...updated[index],
+                                expiry_month: Number(e.target.value),
+                              };
+                              setCards(updated);
+                            }}
+                            style={styles.input}
+                          />
+                        </div>
+
+                        <div style={styles.fieldGroup}>
+                          <label style={styles.label}>Exp. Year</label>
+                          <input
+                            type="number"
+                            value={card.expiry_year}
+                            onChange={(e) => {
+                              const updated = [...cards];
+                              updated[index] = {
+                                ...updated[index],
+                                expiry_year: Number(e.target.value),
+                              };
+                              setCards(updated);
+                            }}
+                            style={styles.input}
+                          />
+                        </div>
+                      </div>
+
+                      <p style={styles.helperText}>
+                        To replace the number on a saved card, remove it and add
+                        a new one.
+                      </p>
+                    </>
                   ) : (
                     <>
                       <div style={styles.fieldGroup}>
@@ -491,10 +593,14 @@ export default function EditProfilePage() {
                           value={card.card_number || ""}
                           onChange={(e) => {
                             const updated = [...cards];
-                            updated[index] = { ...updated[index], card_number: e.target.value };
+                            updated[index] = {
+                              ...updated[index],
+                              card_number: e.target.value,
+                            };
                             setCards(updated);
                           }}
                           style={styles.input}
+                          placeholder="Enter card number"
                         />
                       </div>
 
@@ -539,10 +645,14 @@ export default function EditProfilePage() {
                             value={card.cvv || ""}
                             onChange={(e) => {
                               const updated = [...cards];
-                              updated[index] = { ...updated[index], cvv: e.target.value };
+                              updated[index] = {
+                                ...updated[index],
+                                cvv: e.target.value,
+                              };
                               setCards(updated);
                             }}
                             style={styles.input}
+                            placeholder="CVV"
                           />
                         </div>
                       </div>
@@ -550,12 +660,16 @@ export default function EditProfilePage() {
                   )}
 
                   <div style={styles.buttonRow}>
-                    {!isSavedCard && (
-                      <button onClick={() => saveCard(card, index >= 0 && card.last4 ? index : index)} style={styles.submitBtn}>
-                        Save Card
-                      </button>
-                    )}
-                    <button onClick={() => deleteCard(index)} style={styles.secondaryBtn}>
+                    <button
+                      onClick={() => saveCard(card, index)}
+                      style={styles.submitBtn}
+                    >
+                      Save Card
+                    </button>
+                    <button
+                      onClick={() => deleteCard(index)}
+                      style={styles.secondaryBtn}
+                    >
                       Remove
                     </button>
                   </div>
@@ -567,7 +681,8 @@ export default function EditProfilePage() {
           <section style={styles.section}>
             <h2 style={styles.sectionTitle}>Favorite Movies</h2>
             <p style={styles.helperText}>
-              Favorite movies are added while browsing from the movie detail page.
+              Favorite movies are added while browsing from the movie detail
+              page.
             </p>
 
             {favorites.length === 0 ? (
