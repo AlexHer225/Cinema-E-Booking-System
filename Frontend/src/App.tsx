@@ -10,6 +10,7 @@ import RegisterPage from "./Pages/RegistrationPage";
 import EditProfilePage from "./Pages/EditProfile";
 import ResetPasswordPage from "./Pages/ResetPassword";
 import AdminPortalPage from "./Pages/AdminPortal";
+import FavoritesPage from "./Pages/FavoritePage";
 
 function App() {
   return (
@@ -26,6 +27,7 @@ function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/editprofile" element={<EditProfilePage />} />
+        <Route path="/favorites" element={<FavoritesPage />} />
         <Route path="/ResetPassword" element={<ResetPasswordPage />} />
         <Route path="/admin" element={<AdminPortalPage />} />
 
