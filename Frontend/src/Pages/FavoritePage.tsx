@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import MovieCard from "../components/movieCard";
 import type { Movie } from "../types/Movie";
 
@@ -6,8 +6,7 @@ export default function FavoritesPage() {
   const bgUrl = "/images/backgroundImage.jpg";
   const API_URL = import.meta.env.VITE_API_URL;
 
-  const [movies, setMovies] = useState<Movie[]>([]);
-  const [savedMovieIds, setSavedMovieIds] = useState<string[]>([]);
+  const [favoriteMovies, setFavoriteMovies] = useState<Movie[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -22,23 +21,16 @@ export default function FavoritesPage() {
           throw new Error("You must be logged in to view favorite movies.");
         }
 
-        const [moviesRes, savedRes] = await Promise.all([
-          fetch(`${API_URL}/movies`),
-          fetch(`${API_URL}/me/saved-movies`, {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }),
-        ]);
+        const res = await fetch(`${API_URL}/me/favorites`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
 
-        if (!moviesRes.ok) throw new Error(`Movies API error: ${moviesRes.status}`);
-        if (!savedRes.ok) throw new Error(`Saved Movies API error: ${savedRes.status}`);
+        if (!res.ok) throw new Error(`Favorites API error: ${res.status}`);
 
-        const moviesData: Movie[] = await moviesRes.json();
-        const savedData: { saved_movie_ids: string[] } = await savedRes.json();
-
-        setMovies(moviesData);
-        setSavedMovieIds(savedData.saved_movie_ids || []);
+        const data: Movie[] = await res.json();
+        setFavoriteMovies(data);
       } catch (e: any) {
         setError(e?.message ?? "Failed to load favorite movies");
       } finally {
@@ -48,13 +40,6 @@ export default function FavoritesPage() {
 
     run();
   }, [API_URL]);
-
-  const favoriteMovies = useMemo(() => {
-    return movies.filter((movie: any) => {
-      const movieId = movie._id ?? movie.id;
-      return savedMovieIds.includes(movieId);
-    });
-  }, [movies, savedMovieIds]);
 
   return (
     <div
@@ -79,9 +64,7 @@ export default function FavoritesPage() {
       >
         <section style={styles.section}>
           <h1 style={styles.h1}>My Favorite Movies</h1>
-          <p style={styles.subtext}>
-            Movies you’ve saved to your account.
-          </p>
+          <p style={styles.subtext}>Movies you’ve saved to your account.</p>
 
           {loading && <p style={styles.msg}>Loading…</p>}
           {error && <p style={styles.err}>{error}</p>}

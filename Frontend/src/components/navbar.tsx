@@ -35,21 +35,24 @@ export default function Navbar() {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const navigate = useNavigate();
 
+  const checkAuth = () => {
+    const token = localStorage.getItem("access_token");
+    setIsLoggedIn(!!token);
+  };
+
   const handleLogout = () => {
-    localStorage.removeItem("token");
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("token_type");
+    localStorage.removeItem("user");
     setIsLoggedIn(false);
+    window.dispatchEvent(new Event("storage"));
     navigate("/");
   };
 
   useEffect(() => {
-    const checkAuth = () => {
-      const token = localStorage.getItem("token");
-      setIsLoggedIn(!!token);
-    };
-
-    checkAuth(); // run on mount
-    window.addEventListener("storage", checkAuth); // cross-tab updates
-    window.addEventListener("focus", checkAuth);   // when user returns to tab
+    checkAuth();
+    window.addEventListener("storage", checkAuth);
+    window.addEventListener("focus", checkAuth);
 
     return () => {
       window.removeEventListener("storage", checkAuth);
@@ -60,21 +63,18 @@ export default function Navbar() {
   return (
     <header style={styles.header}>
       <div style={styles.inner}>
-        {/* LEFT */}
         <div style={styles.left}>
           <Link to="/" style={styles.brand}>
             🎬 CineScope
           </Link>
         </div>
 
-        {/* CENTER */}
         <div style={styles.center}>
           <Link to="/" style={styles.navLink}>Home</Link>
           <Link to="/explore" style={styles.navLink}>Explore</Link>
           <Link to="/about" style={styles.navLink}>About</Link>
         </div>
 
-        {/* RIGHT */}
         <div style={styles.right}>
           <SearchDropdown filters={filters} onChange={setFilters} />
 
@@ -120,7 +120,6 @@ function SearchDropdown({
   const [loadingMovies, setLoadingMovies] = useState(false);
   const [moviesError, setMoviesError] = useState("");
 
-  // Dynamic options from movies
   const genres = useMemo(() => {
     const set = new Set<string>();
     for (const m of movies) for (const g of m.genre || []) set.add(g);
@@ -141,7 +140,6 @@ function SearchDropdown({
 
   const sorts: SortBy[] = ["Relevance", "Title (A–Z)", "Rating (High→Low)"];
 
- 
   useEffect(() => {
     if (!open || movies.length > 0) return;
 
@@ -155,19 +153,23 @@ function SearchDropdown({
       .finally(() => setLoadingMovies(false));
   }, [open, movies.length]);
 
-  
   useEffect(() => {
     function onDocClick(e: MouseEvent) {
       if (!open) return;
       const t = e.target as Node;
-      if (!panelRef.current?.contains(t) && !btnRef.current?.contains(t)) setOpen(false);
+      if (!panelRef.current?.contains(t) && !btnRef.current?.contains(t)) {
+        setOpen(false);
+      }
     }
+
     function onEsc(e: KeyboardEvent) {
       if (!open) return;
       if (e.key === "Escape") setOpen(false);
     }
+
     document.addEventListener("mousedown", onDocClick);
     document.addEventListener("keydown", onEsc);
+
     return () => {
       document.removeEventListener("mousedown", onDocClick);
       document.removeEventListener("keydown", onEsc);
@@ -179,9 +181,13 @@ function SearchDropdown({
     return movies
       .filter((m) => {
         const titleOk = !q || m.title.toLowerCase().includes(q);
-        const genreOk = filters.genre === "Any" || (m.genre || []).includes(filters.genre);
+        const genreOk =
+          filters.genre === "Any" || (m.genre || []).includes(filters.genre);
         const mpaaOk = filters.mpaa === "Any" || (m.rating || "") === filters.mpaa;
-        const dateOk = filters.showDate === "Any" || (m.datesPlaying || []).includes(filters.showDate);
+        const dateOk =
+          filters.showDate === "Any" ||
+          (m.datesPlaying || []).includes(filters.showDate);
+
         return titleOk && genreOk && mpaaOk && dateOk;
       })
       .slice(0, 8);
@@ -199,7 +205,6 @@ function SearchDropdown({
 
       {open && (
         <div ref={panelRef} style={styles.dropdown}>
-          {/* Search Input */}
           <div style={styles.row}>
             <input
               value={filters.query}
@@ -209,7 +214,6 @@ function SearchDropdown({
             />
           </div>
 
-          {/* Filters */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
             <div style={styles.row}>
               <label style={styles.label}>Genre</label>
@@ -219,7 +223,9 @@ function SearchDropdown({
                 style={styles.select}
               >
                 {genres.map((g) => (
-                  <option key={g} value={g}>{g}</option>
+                  <option key={g} value={g}>
+                    {g}
+                  </option>
                 ))}
               </select>
             </div>
@@ -232,7 +238,9 @@ function SearchDropdown({
                 style={styles.select}
               >
                 {mpaaRatings.map((r) => (
-                  <option key={r} value={r}>{r}</option>
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
                 ))}
               </select>
             </div>
@@ -246,7 +254,9 @@ function SearchDropdown({
               style={styles.select}
             >
               {showDates.map((d) => (
-                <option key={d} value={d}>{d}</option>
+                <option key={d} value={d}>
+                  {d}
+                </option>
               ))}
             </select>
           </div>
@@ -255,33 +265,73 @@ function SearchDropdown({
             <label style={styles.label}>Sort by</label>
             <select
               value={filters.sortBy}
-              onChange={(e) => onChange({ ...filters, sortBy: e.target.value as SortBy })}
+              onChange={(e) =>
+                onChange({ ...filters, sortBy: e.target.value as SortBy })
+              }
               style={styles.select}
             >
               {sorts.map((s) => (
-                <option key={s} value={s}>{s}</option>
+                <option key={s} value={s}>
+                  {s}
+                </option>
               ))}
             </select>
           </div>
 
-          {/* Results */}
           <div style={{ marginTop: 8 }}>
             {loadingMovies && <div style={{ opacity: 0.85 }}>Loading movies…</div>}
             {moviesError && <div style={{ color: "#ffb4b4" }}>Error: {moviesError}</div>}
-            {!loadingMovies && !moviesError && filteredResults.length === 0 && <div style={{ opacity: 0.85 }}>No matches.</div>}
+            {!loadingMovies && !moviesError && filteredResults.length === 0 && (
+              <div style={{ opacity: 0.85 }}>No matches.</div>
+            )}
+
             {filteredResults.map((m) => (
-              <Link key={m.id} to={`/movies/${m.id}`} style={{ display: "flex", gap: 8, padding: 6, alignItems: "center", textDecoration: "none", color: "white" }} onClick={() => setOpen(false)}>
-                <img src={m.poster || "https://via.placeholder.com/44"} alt={m.title} style={{ width: 44, height: 44, objectFit: "cover", borderRadius: 6 }} />
+              <Link
+                key={m.id}
+                to={`/movies/${m.id}`}
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  padding: 6,
+                  alignItems: "center",
+                  textDecoration: "none",
+                  color: "white",
+                }}
+                onClick={() => setOpen(false)}
+              >
+                <img
+                  src={m.poster || "https://via.placeholder.com/44"}
+                  alt={m.title}
+                  style={{
+                    width: 44,
+                    height: 44,
+                    objectFit: "cover",
+                    borderRadius: 6,
+                  }}
+                />
                 <div>
                   <div style={{ fontWeight: 800 }}>{m.title}</div>
-                  <div style={{ fontSize: 12, opacity: 0.8 }}>{(m.rating || "NR")} • {(m.genre || []).slice(0, 2).join(", ")}</div>
+                  <div style={{ fontSize: 12, opacity: 0.8 }}>
+                    {(m.rating || "NR")} • {(m.genre || []).slice(0, 2).join(", ")}
+                  </div>
                 </div>
               </Link>
             ))}
           </div>
 
           <div style={{ marginTop: 10, display: "flex", gap: 6 }}>
-            <button style={styles.clearBtn} onClick={() => onChange({ query: "", genre: "Any", mpaa: "Any", showDate: "Any", sortBy: "Relevance" })}>
+            <button
+              style={styles.clearBtn}
+              onClick={() =>
+                onChange({
+                  query: "",
+                  genre: "Any",
+                  mpaa: "Any",
+                  showDate: "Any",
+                  sortBy: "Relevance",
+                })
+              }
+            >
               Clear
             </button>
             <button style={styles.applyBtn} onClick={() => setOpen(false)}>
@@ -306,45 +356,39 @@ const styles: Record<string, React.CSSProperties> = {
     background: "rgba(10, 10, 12, 0.4)",
     borderBottom: "1px solid rgba(255,255,255,0.12)",
   },
-  inner: { 
-    height: "100%", 
-    display: "grid", 
-    gridTemplateColumns: "1fr auto 1fr", 
-    alignItems: "center", 
-    padding: "0 24px" 
+  inner: {
+    height: "100%",
+    display: "grid",
+    gridTemplateColumns: "1fr auto 1fr",
+    alignItems: "center",
+    padding: "0 24px",
   },
-
-  left: { 
-    display: "flex", 
-    justifyContent: 
-    "flex-start" 
+  left: {
+    display: "flex",
+    justifyContent: "flex-start",
   },
-
-  center: { 
-    display: "flex", 
-    justifyContent: "center", 
-    gap: 30 
+  center: {
+    display: "flex",
+    justifyContent: "center",
+    gap: 30,
   },
-
-  right: { 
-    display: "flex", 
-    justifyContent: "flex-end", 
-    alignItems: "center", gap: 12 
+  right: {
+    display: "flex",
+    justifyContent: "flex-end",
+    alignItems: "center",
+    gap: 12,
   },
-
-  brand: { 
-    textDecoration: "none", 
-    fontWeight: 800, 
-    fontSize: 18, 
-    color: "white" 
+  brand: {
+    textDecoration: "none",
+    fontWeight: 800,
+    fontSize: 18,
+    color: "white",
   },
-
-  navLink: { 
-    textDecoration: "none", 
-    color: "rgba(255,255,255,0.85)", 
-    fontWeight: 600 
+  navLink: {
+    textDecoration: "none",
+    color: "rgba(255,255,255,0.85)",
+    fontWeight: 600,
   },
-
   navBtn: {
     padding: "8px 12px",
     borderRadius: 10,
@@ -372,45 +416,44 @@ const styles: Record<string, React.CSSProperties> = {
     zIndex: 60,
   },
   input: {
-     width: "100%", 
-     padding: 8, 
-     borderRadius: 8,
-     border: "none", 
-     outline: "none" },
-
-  select: { 
-    width: "100%", 
-    padding: 8, 
-    borderRadius: 8, 
-    border: "none", 
-    outline: "none" 
+    width: "100%",
+    padding: 8,
+    borderRadius: 8,
+    border: "none",
+    outline: "none",
   },
-  row: { 
-    display: "grid", 
-    gap: 4 
+  select: {
+    width: "100%",
+    padding: 8,
+    borderRadius: 8,
+    border: "none",
+    outline: "none",
   },
-
-  label: { 
-    fontSize: 12, 
-    fontWeight: 700, 
-    color: "white" 
+  row: {
+    display: "grid",
+    gap: 4,
   },
-
-  clearBtn: { flex: 1, 
-    background: "transparent", 
-    border: "1px solid rgba(255,255,255,0.2)", 
-    color: "white", 
-    padding: 8, 
-    borderRadius: 8, 
-    cursor: "pointer" 
-  
+  label: {
+    fontSize: 12,
+    fontWeight: 700,
+    color: "white",
   },
-
-  applyBtn: { 
-    flex: 1, 
-    background: "white", 
-    color: "black", padding: 8, 
-    borderRadius: 8, 
-    cursor: "pointer", 
-    fontWeight: 700 },
+  clearBtn: {
+    flex: 1,
+    background: "transparent",
+    border: "1px solid rgba(255,255,255,0.2)",
+    color: "white",
+    padding: 8,
+    borderRadius: 8,
+    cursor: "pointer",
+  },
+  applyBtn: {
+    flex: 1,
+    background: "white",
+    color: "black",
+    padding: 8,
+    borderRadius: 8,
+    cursor: "pointer",
+    fontWeight: 700,
+  },
 };

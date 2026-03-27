@@ -6,7 +6,8 @@ const API_BASE =
   "http://localhost:8000";
 
 type Movie = {
-  id: string;
+  _id?: string;
+  id?: string;
   title: string;
   rating?: string;
   description?: string;
@@ -82,6 +83,7 @@ export default function MovieDetail() {
     }
 
     load();
+
     return () => {
       cancelled = true;
     };
@@ -90,12 +92,12 @@ export default function MovieDetail() {
   useEffect(() => {
     if (!id) return;
 
-    const checkSaved = async () => {
+    const checkFavorite = async () => {
       try {
         const token = localStorage.getItem("access_token");
         if (!token) return;
 
-        const res = await fetch(`${API_BASE}/me/saved-movies`, {
+        const res = await fetch(`${API_BASE}/me/favorites`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -103,14 +105,19 @@ export default function MovieDetail() {
 
         if (!res.ok) return;
 
-        const data: { saved_movie_ids: string[] } = await res.json();
-        setIsFavorite((data.saved_movie_ids || []).includes(id));
+        const favorites: Movie[] = await res.json();
+        const isSaved = favorites.some((movie: any) => {
+          const movieId = movie._id ?? movie.id;
+          return movieId === id;
+        });
+
+        setIsFavorite(isSaved);
       } catch {
         // leave silent for now
       }
     };
 
-    checkSaved();
+    checkFavorite();
   }, [id]);
 
   const handleFavoriteClick = async () => {
@@ -126,7 +133,7 @@ export default function MovieDetail() {
       setFavoriteLoading(true);
 
       if (isFavorite) {
-        const res = await fetch(`${API_BASE}/me/saved-movies/${id}`, {
+        const res = await fetch(`${API_BASE}/me/favorites/${id}`, {
           method: "DELETE",
           headers: {
             Authorization: `Bearer ${token}`,
@@ -136,13 +143,11 @@ export default function MovieDetail() {
         if (!res.ok) throw new Error("Failed to remove favorite");
         setIsFavorite(false);
       } else {
-        const res = await fetch(`${API_BASE}/me/saved-movies`, {
+        const res = await fetch(`${API_BASE}/me/favorites/${id}`, {
           method: "POST",
           headers: {
-            "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({ movie_id: id }),
         });
 
         if (!res.ok) throw new Error("Failed to save favorite");

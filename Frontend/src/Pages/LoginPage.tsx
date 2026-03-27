@@ -23,7 +23,7 @@ type ApiErrorItem = {
 
 const bgUrl = "/images/backgroundImage.jpg";
 const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+  import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 const getErrorMessage = (data: any) => {
   if (!data) return "Login failed.";
@@ -119,17 +119,14 @@ const LoginPage: React.FC = () => {
         return;
       }
 
-     
-      localStorage.setItem("token", data.access_token);
+      localStorage.setItem("access_token", data.access_token);
       localStorage.setItem("token_type", data.token_type || "bearer");
 
       if (data.user) {
         localStorage.setItem("user", JSON.stringify(data.user));
       }
 
-  
       window.dispatchEvent(new Event("storage"));
-
       navigate("/");
     } catch (error) {
       console.error("Login error:", error);
@@ -141,11 +138,9 @@ const LoginPage: React.FC = () => {
 
   return (
     <div style={styles.page}>
-      {/* Background */}
       <div style={{ ...styles.bg, backgroundImage: `url(${bgUrl})` }} />
       <div style={styles.overlay} />
 
-      {/* Centered Wrapper */}
       <div style={styles.wrapper}>
         <div style={styles.card}>
           <div style={styles.headerBlock}>
@@ -157,7 +152,6 @@ const LoginPage: React.FC = () => {
           </div>
 
           <form onSubmit={handleSubmit} style={styles.form}>
-            {/* Username */}
             <div style={styles.fieldGroup}>
               <label style={styles.label}>Username</label>
               <input
@@ -173,7 +167,6 @@ const LoginPage: React.FC = () => {
               )}
             </div>
 
-            {/* Password */}
             <div style={styles.fieldGroup}>
               <label style={styles.label}>Password</label>
               <div style={styles.passwordWrapper}>
@@ -202,13 +195,15 @@ const LoginPage: React.FC = () => {
               <div style={styles.serverError}>{serverError}</div>
             )}
 
-            {/* Submit */}
-            <button type="submit" disabled={isSubmitting} style={styles.submitBtn}>
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              style={styles.submitBtn}
+            >
               {isSubmitting ? "Logging in..." : "Log In"}
             </button>
           </form>
 
-          {/* Footer */}
           <div style={styles.footer}>
             <span style={styles.footerText}>Don’t have an account?</span>
             <Link to="/register" style={styles.footerLink}>
@@ -220,7 +215,6 @@ const LoginPage: React.FC = () => {
     </div>
   );
 };
-
 
 const styles: Record<string, React.CSSProperties> = {
   page: {
@@ -244,7 +238,6 @@ const styles: Record<string, React.CSSProperties> = {
     zIndex: -1,
   },
 
- 
   wrapper: {
     height: "calc(100vh - 70px)",
     marginTop: 70,
