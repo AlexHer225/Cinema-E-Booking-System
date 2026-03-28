@@ -163,7 +163,10 @@ class UpdateAddress(BaseModel):
     state: str | None = Field(default=None, max_length=100)
     zip_code: str | None = Field(default=None, max_length=20)
 
-
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8, max_length=128)
+    
 # ---------- Serializers ----------
 
 def _mask_card(card: dict) -> dict:
@@ -385,6 +388,45 @@ async def get_movie(id: str):
 
 
 # ---------- Auth endpoints ----------
+@app.put("/me/password", status_code=status.HTTP_200_OK)
+async def change_password(
+    body: ChangePasswordRequest,
+    background_tasks: BackgroundTasks,
+    current_user=Depends(get_current_user),
+):
+    """Allows an authenticated user to change their password."""
+    
+    # 1. Verify the current password matches what is in the database
+    if not verify_password(body.current_password, current_user["hashed_password"]):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect current password.",
+        )
+
+    # 2. Prevent them from reusing their current password (optional but recommended)
+    if body.current_password == body.new_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password must be different from the current password.",
+        )
+
+    # 3. Hash the new password and update the database
+    await users_collection.update_one(
+        {"_id": current_user["_id"]},
+        {"$set": {
+            "hashed_password": hash_password(body.new_password),
+            "passwordChangedAt": int(time.time()),
+        }},
+    )
+
+    # 4. Trigger the security notification email in the background
+    background_tasks.add_task(
+        send_profile_update_email, 
+        current_user["email"], 
+        current_user.get("name")
+    )
+
+    return {"message": "Password successfully updated."}
 
 @app.post("/signup", response_model=SignupResponse, status_code=status.HTTP_201_CREATED)
 async def signup(user: UserSignup, background_tasks: BackgroundTasks):
