@@ -29,12 +29,43 @@ function App() {
         <Route path="/editprofile" element={<EditProfilePage />} />
         <Route path="/favorites" element={<FavoritesPage />} />
         <Route path="/reset-password" element={<ResetPassword />} />
-        <Route path="/admin" element={<AdminPortalPage />} />
+
+        <Route
+          path="/admin"
+          element={
+            <AdminRoute>
+              <AdminPortalPage />
+            </AdminRoute>
+          }
+        />
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </div>
   );
+}
+
+function AdminRoute({ children }: { children: React.ReactNode }) {
+  const token = localStorage.getItem("access_token");
+  const storedUser = localStorage.getItem("user");
+
+  if (!token || !storedUser) {
+    return <Navigate to="/login" replace />;
+  }
+
+  try {
+    const user = JSON.parse(storedUser);
+    const username = (user?.username || "").trim().toLowerCase();
+
+    if (username !== "admin") {
+      return <Navigate to="/" replace />;
+    }
+
+    return <>{children}</>;
+  } catch (error) {
+    console.error("Invalid user data in localStorage:", error);
+    return <Navigate to="/login" replace />;
+  }
 }
 
 function VideoRedirect() {

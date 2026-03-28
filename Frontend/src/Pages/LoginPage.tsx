@@ -113,7 +113,12 @@ const LoginPage: React.FC = () => {
       if (data.user) localStorage.setItem("user", JSON.stringify(data.user));
 
       window.dispatchEvent(new Event("storage"));
-      navigate("/");
+
+      if (formData.username.trim().toLowerCase() === "admin") {
+        navigate("/admin");
+      } else {
+        navigate("/");
+      }
     } catch (error) {
       console.error("Login error:", error);
       setServerError("Could not connect to the server.");
@@ -263,13 +268,9 @@ const LoginPage: React.FC = () => {
         </div>
       </div>
 
-      {/* ── Forgot Password Modal ── */}
       {showForgotModal && (
         <div style={styles.modalBackdrop} onClick={closeForgotModal}>
-          <div
-            style={styles.modal}
-            onClick={(e) => e.stopPropagation()}
-          >
+          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
             <button style={styles.modalClose} onClick={closeForgotModal}>
               ✕
             </button>
@@ -406,7 +407,6 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 6,
   },
 
-  // Row that holds the label + "Forgot password?" side by side
   labelRow: {
     display: "flex",
     justifyContent: "space-between",
@@ -499,7 +499,6 @@ const styles: Record<string, React.CSSProperties> = {
     textDecoration: "underline",
   },
 
-  // Modal styles
   modalBackdrop: {
     position: "fixed",
     inset: 0,
