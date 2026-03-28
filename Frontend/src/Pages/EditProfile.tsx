@@ -1,4 +1,6 @@
 import React, { useEffect, useState } from "react";
+import AddressForm from "./AddressForm"; // adjust path
+
 
 const API_BASE =
   (import.meta as any).env?.VITE_API_URL?.trim?.() || "http://127.0.0.1:8000";
@@ -423,11 +425,7 @@ export default function EditProfilePage() {
           <section style={styles.section}>
             <div style={styles.sectionHeaderRow}>
               <h2 style={styles.sectionTitle}>Address</h2>
-              {!user.address && (
-                <button onClick={addAddress} style={styles.secondaryBtn}>
-                  Add Address
-                </button>
-              )}
+              <AddressForm />
             </div>
 
             {user.address ? (
