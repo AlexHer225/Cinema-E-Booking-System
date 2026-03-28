@@ -70,9 +70,15 @@ export default function Navbar() {
         </div>
 
         <div style={styles.center}>
-          <Link to="/" style={styles.navLink}>Home</Link>
-          <Link to="/explore" style={styles.navLink}>Explore</Link>
-          <Link to="/about" style={styles.navLink}>About</Link>
+          <Link to="/" style={styles.navLink}>
+            Home
+          </Link>
+          <Link to="/explore" style={styles.navLink}>
+            Explore
+          </Link>
+          <Link to="/about" style={styles.navLink}>
+            About
+          </Link>
         </div>
 
         <div style={styles.right}>
@@ -182,19 +188,29 @@ function SearchDropdown({
 
   const filteredResults = useMemo(() => {
     const q = filters.query.trim().toLowerCase();
-    return movies
-      .filter((m) => {
-        const titleOk = !q || m.title.toLowerCase().includes(q);
-        const genreOk =
-          filters.genre === "Any" || (m.genre || []).includes(filters.genre);
-        const mpaaOk = filters.mpaa === "Any" || (m.rating || "") === filters.mpaa;
-        const dateOk =
-          filters.showDate === "Any" ||
-          (m.datesPlaying || []).includes(filters.showDate);
 
-        return titleOk && genreOk && mpaaOk && dateOk;
-      })
-      .slice(0, 8);
+    let results = movies.filter((m) => {
+      const titleOk = !q || m.title.toLowerCase().includes(q);
+      const genreOk =
+        filters.genre === "Any" || (m.genre || []).includes(filters.genre);
+      const mpaaOk =
+        filters.mpaa === "Any" || (m.rating || "") === filters.mpaa;
+      const dateOk =
+        filters.showDate === "Any" ||
+        (m.datesPlaying || []).includes(filters.showDate);
+
+      return titleOk && genreOk && mpaaOk && dateOk;
+    });
+
+    if (filters.sortBy === "Title (A–Z)") {
+      results = [...results].sort((a, b) => a.title.localeCompare(b.title));
+    } else if (filters.sortBy === "Rating (High→Low)") {
+      results = [...results].sort((a, b) =>
+        (b.rating || "").localeCompare(a.rating || "")
+      );
+    }
+
+    return results.slice(0, 8);
   }, [movies, filters]);
 
   return (
@@ -218,7 +234,140 @@ function SearchDropdown({
             />
           </div>
 
-          {/* (rest unchanged) */}
+          <div
+            style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}
+          >
+            <div style={styles.row}>
+              <label style={styles.label}>Genre</label>
+              <select
+                value={filters.genre}
+                onChange={(e) => onChange({ ...filters, genre: e.target.value })}
+                style={styles.select}
+              >
+                {genres.map((g) => (
+                  <option key={g} value={g}>
+                    {g}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div style={styles.row}>
+              <label style={styles.label}>MPAA</label>
+              <select
+                value={filters.mpaa}
+                onChange={(e) => onChange({ ...filters, mpaa: e.target.value })}
+                style={styles.select}
+              >
+                {mpaaRatings.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div style={styles.row}>
+            <label style={styles.label}>Show Date</label>
+            <select
+              value={filters.showDate}
+              onChange={(e) =>
+                onChange({ ...filters, showDate: e.target.value })
+              }
+              style={styles.select}
+            >
+              {showDates.map((d) => (
+                <option key={d} value={d}>
+                  {d}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div style={styles.row}>
+            <label style={styles.label}>Sort by</label>
+            <select
+              value={filters.sortBy}
+              onChange={(e) =>
+                onChange({ ...filters, sortBy: e.target.value as SortBy })
+              }
+              style={styles.select}
+            >
+              {sorts.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div style={{ marginTop: 8 }}>
+            {loadingMovies && (
+              <div style={{ opacity: 0.85 }}>Loading movies…</div>
+            )}
+
+            {moviesError && (
+              <div style={{ color: "#ffb4b4" }}>Error: {moviesError}</div>
+            )}
+
+            {!loadingMovies && !moviesError && filteredResults.length === 0 && (
+              <div style={{ opacity: 0.85 }}>No matches.</div>
+            )}
+
+            {filteredResults.map((m) => (
+              <Link
+                key={m.id}
+                to={`/movies/${m.id}`}
+                style={{
+                  display: "flex",
+                  gap: 8,
+                  padding: 6,
+                  alignItems: "center",
+                  textDecoration: "none",
+                  color: "white",
+                }}
+                onClick={() => setOpen(false)}
+              >
+                <img
+                  src={m.poster || "https://via.placeholder.com/44"}
+                  alt={m.title}
+                  style={{
+                    width: 44,
+                    height: 44,
+                    objectFit: "cover",
+                    borderRadius: 6,
+                  }}
+                />
+                <div>
+                  <div style={{ fontWeight: 800 }}>{m.title}</div>
+                  <div style={{ fontSize: 12, opacity: 0.8 }}>
+                    {(m.rating || "NR")} • {(m.genre || []).slice(0, 2).join(", ")}
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </div>
+
+          <div style={{ marginTop: 10, display: "flex", gap: 6 }}>
+            <button
+              style={styles.clearBtn}
+              onClick={() =>
+                onChange({
+                  query: "",
+                  genre: "Any",
+                  mpaa: "Any",
+                  showDate: "Any",
+                  sortBy: "Relevance",
+                })
+              }
+            >
+              Clear
+            </button>
+            <button style={styles.applyBtn} onClick={() => setOpen(false)}>
+              Close
+            </button>
+          </div>
         </div>
       )}
     </div>
@@ -303,8 +452,38 @@ const styles: Record<string, React.CSSProperties> = {
     border: "none",
     outline: "none",
   },
+  select: {
+    width: "100%",
+    padding: 8,
+    borderRadius: 8,
+    border: "none",
+    outline: "none",
+  },
   row: {
     display: "grid",
     gap: 4,
+  },
+  label: {
+    fontSize: 12,
+    fontWeight: 700,
+    color: "white",
+  },
+  clearBtn: {
+    flex: 1,
+    background: "transparent",
+    border: "1px solid rgba(255,255,255,0.2)",
+    color: "white",
+    padding: 8,
+    borderRadius: 8,
+    cursor: "pointer",
+  },
+  applyBtn: {
+    flex: 1,
+    background: "white",
+    color: "black",
+    padding: 8,
+    borderRadius: 8,
+    cursor: "pointer",
+    fontWeight: 700,
   },
 };
