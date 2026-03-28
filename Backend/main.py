@@ -21,6 +21,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, EmailStr, Field
 from pwdlib import PasswordHash
 from pymongo.errors import DuplicateKeyError
+from cryptography.fernet import Fernet
 
 
 # Load environment variables
@@ -47,8 +48,10 @@ SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
 
 VERIFICATION_TOKEN_EXPIRE_MINUTES = int(os.getenv("VERIFICATION_TOKEN_EXPIRE_MINUTES", "60"))
 PASSWORD_RESET_TOKEN_EXPIRE_MINUTES = int(os.getenv("PASSWORD_RESET_TOKEN_EXPIRE_MINUTES", "30"))
+ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY")
 
 MAX_CARDS = 3
+cipher_suite = Fernet(ENCRYPTION_KEY.encode())
 
 if not MONGODB_URI:
     raise Exception("MONGODB_URI not found in .env file")
@@ -164,10 +167,10 @@ class UpdateAddress(BaseModel):
 # ---------- Serializers ----------
 
 def _mask_card(card: dict) -> dict:
-    """Return a card dict safe to send to the client — no full PAN, no CVV."""
+    """Return a card dict safe to send to the client."""
     return {
         "cardholder_name": card.get("cardholder_name"),
-        "last4": str(card.get("card_number", ""))[-4:],
+        "last4": card.get("last4", ""), # Pull the explicitly saved last4
         "expiry_month": card.get("expiry_month"),
         "expiry_year": card.get("expiry_year"),
     }
@@ -689,7 +692,7 @@ async def add_card(
     body: PaymentCard,
     current_user=Depends(get_current_user),
 ):
-    """Add a payment card. Rejects if the user already has MAX_CARDS (3) saved."""
+    """Add a payment card safely."""
     existing_cards = current_user.get("payment_cards", [])
 
     if len(existing_cards) >= MAX_CARDS:
@@ -698,14 +701,22 @@ async def add_card(
             detail=f"You can only store up to {MAX_CARDS} payment cards.",
         )
 
+    card_data = body.model_dump()
+    
+    card_data["last4"] = body.card_number[-4:]
+    
+    encrypted_pan = cipher_suite.encrypt(body.card_number.encode()).decode()
+    card_data["card_number"] = encrypted_pan
+    
+    card_data.pop("cvv", None)
+
     await users_collection.update_one(
         {"_id": current_user["_id"]},
-        {"$push": {"payment_cards": body.model_dump()}},
+        {"$push": {"payment_cards": card_data}},
     )
 
     updated_user = await users_collection.find_one({"_id": current_user["_id"]})
     return {"payment_cards": [_mask_card(c) for c in updated_user.get("payment_cards", [])]}
-
 
 @app.put("/me/cards/{card_index}")
 async def update_card(
@@ -713,15 +724,24 @@ async def update_card(
     body: PaymentCard,
     current_user=Depends(get_current_user),
 ):
-    """Replace the card at the given 0-based index with new details."""
+    """Replace the card at the given 0-based index with new encrypted details."""
     cards = current_user.get("payment_cards", [])
 
     if card_index < 0 or card_index >= len(cards):
         raise HTTPException(status_code=404, detail="Card not found")
 
+    card_data = body.model_dump()
+    
+    card_data["last4"] = body.card_number[-4:]
+    
+    encrypted_pan = cipher_suite.encrypt(body.card_number.encode()).decode()
+    card_data["card_number"] = encrypted_pan
+    
+    card_data.pop("cvv", None)
+
     await users_collection.update_one(
         {"_id": current_user["_id"]},
-        {"$set": {f"payment_cards.{card_index}": body.model_dump()}},
+        {"$set": {f"payment_cards.{card_index}": card_data}},
     )
 
     updated_user = await users_collection.find_one({"_id": current_user["_id"]})
