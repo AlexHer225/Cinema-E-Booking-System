@@ -157,9 +157,15 @@ const RegisterPage: React.FC = () => {
             </p>
           </div>
 
+          <p style={{ fontSize: 12, opacity: 0.7, marginBottom: 10 }}>
+            <span style={styles.requiredStar}>*</span> indicates required fields
+          </p>
+
           <form onSubmit={handleSubmit} style={styles.form}>
             <div style={styles.fieldGroup}>
-              <label style={styles.label}>Full Name</label>
+              <label style={styles.label}>
+                Full Name <span style={styles.requiredStar}>*</span>
+              </label>
               <input
                 type="text"
                 name="name"
@@ -172,7 +178,9 @@ const RegisterPage: React.FC = () => {
             </div>
 
             <div style={styles.fieldGroup}>
-              <label style={styles.label}>Username</label>
+              <label style={styles.label}>
+                Username <span style={styles.requiredStar}>*</span>
+              </label>
               <input
                 type="text"
                 name="username"
@@ -187,7 +195,9 @@ const RegisterPage: React.FC = () => {
             </div>
 
             <div style={styles.fieldGroup}>
-              <label style={styles.label}>Email</label>
+              <label style={styles.label}>
+                Email <span style={styles.requiredStar}>*</span>
+              </label>
               <input
                 type="email"
                 name="email"
@@ -200,7 +210,9 @@ const RegisterPage: React.FC = () => {
             </div>
 
             <div style={styles.fieldGroup}>
-              <label style={styles.label}>Password</label>
+              <label style={styles.label}>
+                Password <span style={styles.requiredStar}>*</span>
+              </label>
               <div style={styles.passwordWrapper}>
                 <input
                   type={showPassword ? "text" : "password"}
@@ -254,7 +266,6 @@ const styles: Record<string, React.CSSProperties> = {
     minHeight: "100vh",
     width: "100%",
   },
-
   bg: {
     position: "fixed",
     inset: 0,
@@ -262,14 +273,12 @@ const styles: Record<string, React.CSSProperties> = {
     backgroundPosition: "center",
     zIndex: -2,
   },
-
   overlay: {
     position: "fixed",
     inset: 0,
     background: "rgba(0,0,0,0.55)",
     zIndex: -1,
   },
-
   wrapper: {
     height: "calc(100vh - 70px)",
     marginTop: 70,
@@ -279,7 +288,6 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "0 24px",
     boxSizing: "border-box",
   },
-
   card: {
     width: "100%",
     maxWidth: 520,
@@ -292,12 +300,10 @@ const styles: Record<string, React.CSSProperties> = {
     color: "white",
     boxShadow: "0 20px 50px rgba(0,0,0,0.4)",
   },
-
   headerBlock: {
     textAlign: "center",
     marginBottom: 20,
   },
-
   eyebrow: {
     fontSize: 12,
     letterSpacing: 1.2,
@@ -305,39 +311,38 @@ const styles: Record<string, React.CSSProperties> = {
     textTransform: "uppercase",
     fontWeight: 700,
   },
-
   title: {
     fontSize: 36,
     fontWeight: 800,
     margin: "8px 0",
     lineHeight: 1.1,
   },
-
   subtitle: {
     fontSize: 14,
     opacity: 0.8,
     lineHeight: 1.5,
     margin: 0,
   },
-
   form: {
     display: "flex",
     flexDirection: "column",
     gap: 16,
   },
-
   fieldGroup: {
     display: "flex",
     flexDirection: "column",
     gap: 6,
   },
-
   label: {
     fontWeight: 600,
     fontSize: 13,
     color: "white",
   },
-
+  requiredStar: {
+    color: "#ff8080",
+    marginLeft: 4,
+    fontWeight: 700,
+  },
   input: {
     width: "100%",
     boxSizing: "border-box",
@@ -349,12 +354,10 @@ const styles: Record<string, React.CSSProperties> = {
     outline: "none",
     fontSize: 14,
   },
-
   passwordWrapper: {
     display: "flex",
     gap: 8,
   },
-
   passwordInput: {
     flex: 1,
     minWidth: 0,
@@ -367,7 +370,6 @@ const styles: Record<string, React.CSSProperties> = {
     outline: "none",
     fontSize: 14,
   },
-
   toggleBtn: {
     padding: "0 12px",
     borderRadius: 10,
@@ -377,12 +379,10 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     fontWeight: 600,
   },
-
   error: {
     color: "#ffb3b3",
     fontSize: 12,
   },
-
   serverError: {
     color: "#ff8080",
     fontSize: 13,
@@ -391,7 +391,6 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 10,
     padding: "10px 12px",
   },
-
   success: {
     color: "#bff5c7",
     fontSize: 13,
@@ -401,7 +400,6 @@ const styles: Record<string, React.CSSProperties> = {
     padding: "10px 12px",
     lineHeight: 1.5,
   },
-
   submitBtn: {
     marginTop: 8,
     padding: "12px",
@@ -413,7 +411,6 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     fontSize: 14,
   },
-
   footer: {
     marginTop: 18,
     display: "flex",
@@ -421,12 +418,10 @@ const styles: Record<string, React.CSSProperties> = {
     gap: 6,
     flexWrap: "wrap",
   },
-
   footerText: {
     fontSize: 13,
     opacity: 0.8,
   },
-
   footerLink: {
     color: "white",
     fontWeight: 600,
