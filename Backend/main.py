@@ -345,7 +345,23 @@ If you did not request a password reset, you can safely ignore this email.
 """)
     send_email(msg)
 
+def send_profile_update_email(to_email: str, name: str | None) -> None:
+    greeting = name or "there"
 
+    msg = EmailMessage()
+    msg["Subject"] = "Your profile has been updated"
+    msg["From"] = MAIL_FROM
+    msg["To"] = to_email
+    msg.set_content(f"""Hi {greeting},
+
+This is a quick notification to let you know that your profile information was recently updated. 
+
+If you made these changes, no further action is required. 
+
+If you did not authorize this change, please reset your password immediately and contact support.
+""")
+    send_email(msg)
+    
 # ---------- Movie endpoints ----------
 
 @app.get("/movies")
@@ -573,6 +589,7 @@ async def get_profile(current_user=Depends(get_current_user)):
 @app.patch("/me/profile")
 async def update_profile(
     body: UpdateProfile,
+    background_tasks: BackgroundTasks, # Add BackgroundTasks here
     current_user=Depends(get_current_user),
 ):
     """Update name or username. Email cannot be changed here."""
@@ -597,8 +614,14 @@ async def update_profile(
     )
 
     updated_user = await users_collection.find_one({"_id": current_user["_id"]})
-    return profile_serializer(updated_user)
+    
+    background_tasks.add_task(
+        send_profile_update_email, 
+        current_user["email"], 
+        updated_user.get("name")
+    )
 
+    return profile_serializer(updated_user)
 
 # ---------- Address endpoints ----------
 

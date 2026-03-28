@@ -293,27 +293,6 @@ export default function EditProfilePage() {
     }
   };
 
-  const addAddress = () => {
-    if (!user) return;
-
-    if (user.address) {
-      setServerError("Only one address can be stored.");
-      return;
-    }
-
-    setServerError("");
-    setSuccessMessage("");
-    setUser({
-      ...user,
-      address: {
-        street: "",
-        city: "",
-        state: "",
-        zip: "",
-      },
-    });
-  };
-
   const addBlankCard = () => {
     if (cards.length >= 3) {
       setServerError("Users can store a maximum of 3 payment cards.");
