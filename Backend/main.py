@@ -31,6 +31,9 @@ MONGODB_URI = os.getenv("MONGODB_URI")
 DB_NAME = os.getenv("DB_NAME", "SoftwareMovies")
 COLLECTION_NAME = os.getenv("COLLECTION_NAME", "Movies")
 USERS_COLLECTION_NAME = os.getenv("USERS_COLLECTION_NAME", "users")
+SHOWROOMS_COLLECTION_NAME = os.getenv("SHOWROOMS_COLLECTION_NAME", "Showrooms")
+SHOWTIMES_COLLECTION_NAME = os.getenv("SHOWTIMES_COLLECTION_NAME", "Showtimes")
+BOOKINGS_COLLECTION_NAME = os.getenv("BOOKINGS_COLLECTION_NAME", "Booking")
 
 JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
@@ -64,6 +67,9 @@ client = AsyncIOMotorClient(MONGODB_URI)
 db = client[DB_NAME]
 collection = db[COLLECTION_NAME]
 users_collection = db[USERS_COLLECTION_NAME]
+showrooms_collection = db[SHOWROOMS_COLLECTION_NAME]
+showtimes_collection = db[SHOWTIMES_COLLECTION_NAME]
+bookings_collection = db[BOOKINGS_COLLECTION_NAME]
 
 
 @asynccontextmanager
@@ -72,6 +78,15 @@ async def lifespan(app: FastAPI):
     await users_collection.create_index("username", unique=True)
     await users_collection.create_index("verificationTokenHash")
     await users_collection.create_index("passwordResetTokenHash")
+    # Compound index to make conflict queries fast
+    await showtimes_collection.create_index(
+        [("showroom_id", 1), ("date", 1), ("start_time", 1)]
+    )
+    # Bookings: fast seat-conflict lookups and session token lookups
+    await bookings_collection.create_index(
+        [("showtime_id", 1), ("status", 1)]
+    )
+    await bookings_collection.create_index("session_token")
     yield
     client.close()
 
@@ -166,6 +181,58 @@ class UpdateAddress(BaseModel):
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str = Field(min_length=8, max_length=128)
+
+
+class AddMovie(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    description: str = Field(min_length=1, max_length=2000)
+    trailer: str | None = Field(default=None, max_length=500)
+    poster: str | None = Field(default=None, max_length=500)
+    rating: str | None = Field(default=None, max_length=10)  # e.g. "PG-13", "R"
+    genre: list[str] = Field(default_factory=list)
+    duration_minutes: int = Field(ge=1, le=600)
+    cast: list[str] = Field(default_factory=list)
+    currentlyPlaying: bool = False
+
+
+class AddShowtime(BaseModel):
+    movie_id: str
+    showroom_id: str
+    date: str = Field(
+        pattern=r"^\d{4}-\d{2}-\d{2}$",
+        description="Date in YYYY-MM-DD format",
+    )
+    start_time: str = Field(
+        pattern=r"^\d{2}:\d{2}$",
+        description="Start time in HH:MM (24-hour) format",
+    )
+
+
+# Ticket pricing — update these values as needed
+TICKET_PRICES: dict[str, float] = {
+    "adult": 12.00,
+    "child": 8.00,
+    "senior": 10.00,
+}
+
+
+class TicketItem(BaseModel):
+    seat: str = Field(min_length=1, max_length=10)
+    type: str = Field(pattern=r"^(adult|child|senior)$")
+
+
+class ReserveBooking(BaseModel):
+    showtime_id: str
+    tickets: list[TicketItem] = Field(min_length=1, max_length=50)
+    session_token: str = Field(min_length=1, max_length=100)
+
+
+class AttachUser(BaseModel):
+    session_token: str
+
+
+class ConfirmEmail(BaseModel):
+    email: EmailStr
     
 # ---------- Serializers ----------
 
@@ -202,6 +269,47 @@ def movie_serializer(movie) -> dict:
         "genre": movie.get("genre", []),
         "currentlyPlaying": movie.get("currentlyPlaying", False),
         "datesPlaying": movie.get("datesPlaying", []),
+        "duration_minutes": movie.get("duration_minutes"),
+        "cast": movie.get("cast", []),
+    }
+
+
+def showroom_serializer(showroom) -> dict:
+    return {
+        "id": str(showroom["_id"]),
+        "name": showroom.get("name", ""),
+        "total_seats": showroom.get("total_seats", 0),
+        "seat_layout": showroom.get("seat_layout", []),
+    }
+
+
+def showtime_serializer(showtime) -> dict:
+    return {
+        "id": str(showtime["_id"]),
+        "movie_id": showtime.get("movie_id", ""),
+        "showroom_id": showtime.get("showroom_id", ""),
+        "showroom_name": showtime.get("showroom_name", ""),
+        "date": showtime.get("date", ""),
+        "start_time": showtime.get("start_time", ""),
+        "end_time": showtime.get("end_time", ""),
+    }
+
+
+def booking_serializer(booking) -> dict:
+    return {
+        "id": str(booking["_id"]),
+        "user_id": booking.get("user_id"),
+        "showtime_id": booking.get("showtime_id", ""),
+        "movie_title": booking.get("movie_title", ""),
+        "showroom_name": booking.get("showroom_name", ""),
+        "date": booking.get("date", ""),
+        "start_time": booking.get("start_time", ""),
+        "tickets": booking.get("tickets", []),
+        "total_price": booking.get("total_price", 0.0),
+        "status": booking.get("status", "reserved"),
+        "email": booking.get("email"),
+        "session_token": booking.get("session_token", ""),
+        "created_at": booking.get("created_at", 0),
     }
 
 
@@ -271,6 +379,31 @@ async def get_current_user(
         raise credentials_exception
 
     return user
+
+
+async def get_optional_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+):
+    """
+    Like get_current_user but returns None instead of raising 401 when no
+    valid token is present. Used by booking endpoints that allow anonymous
+    seat selection but require login at checkout.
+    """
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        return None
+    try:
+        payload = jwt.decode(
+            credentials.credentials,
+            JWT_SECRET_KEY,
+            algorithms=[JWT_ALGORITHM],
+        )
+        user_id = payload.get("sub")
+        if not user_id or not ObjectId.is_valid(user_id):
+            return None
+    except InvalidTokenError:
+        return None
+
+    return await users_collection.find_one({"_id": ObjectId(user_id)})
 
 
 def make_verification_token():
@@ -385,6 +518,409 @@ async def get_movie(id: str):
         raise HTTPException(status_code=404, detail="Movie not found")
 
     return movie_serializer(movie)
+
+
+# ---------- Admin: Add Movie ----------
+
+@app.post("/admin/movies", status_code=status.HTTP_201_CREATED)
+async def add_movie(body: AddMovie, current_user=Depends(get_current_user)):
+    """
+    Admin endpoint: insert a new movie into the database.
+    Requires authentication. Rejects duplicate titles (case-insensitive).
+    """
+    if current_user.get("role") != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required.",
+        )
+
+    # Reject duplicate title (case-insensitive)
+    existing = await collection.find_one(
+        {"title": {"$regex": f"^{body.title.strip()}$", "$options": "i"}}
+    )
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"A movie titled '{body.title.strip()}' already exists.",
+        )
+
+    movie_doc = {
+        "title": body.title.strip(),
+        "description": body.description.strip(),
+        "trailer": body.trailer.strip() if body.trailer else None,
+        "poster": body.poster.strip() if body.poster else None,
+        "rating": body.rating.strip() if body.rating else None,
+        "genre": [g.strip() for g in body.genre],
+        "duration_minutes": body.duration_minutes,
+        "cast": [c.strip() for c in body.cast],
+        "currentlyPlaying": body.currentlyPlaying,
+        "datesPlaying": [],
+        "createdAt": int(time.time()),
+    }
+
+    result = await collection.insert_one(movie_doc)
+    created_movie = await collection.find_one({"_id": result.inserted_id})
+    return movie_serializer(created_movie)
+
+
+# ---------- Showrooms ----------
+
+@app.get("/showrooms")
+async def get_showrooms():
+    """
+    Return all showrooms. These are pre-seeded in the database by the admin.
+    No authentication required — the frontend needs this to build the seat map.
+    """
+    showrooms = []
+    async for showroom in showrooms_collection.find():
+        showrooms.append(showroom_serializer(showroom))
+    return showrooms
+
+
+# ---------- Showtimes ----------
+
+@app.post("/admin/showtimes", status_code=status.HTTP_201_CREATED)
+async def add_showtime(body: AddShowtime, current_user=Depends(get_current_user)):
+    """
+    Admin endpoint: schedule a showtime for a movie in a showroom.
+    - Validates that the movie and showroom exist.
+    - Computes end_time from the movie's duration_minutes.
+    - Rejects the request with 409 if the showroom already has an overlapping
+      showtime on that date (adds a 30-minute buffer between screenings).
+    """
+    if current_user.get("role") != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required.",
+        )
+
+    # Validate movie_id
+    if not ObjectId.is_valid(body.movie_id):
+        raise HTTPException(status_code=400, detail="Invalid movie ID")
+    movie = await collection.find_one({"_id": ObjectId(body.movie_id)})
+    if not movie:
+        raise HTTPException(status_code=404, detail="Movie not found")
+
+    # Validate showroom_id
+    if not ObjectId.is_valid(body.showroom_id):
+        raise HTTPException(status_code=400, detail="Invalid showroom ID")
+    showroom = await showrooms_collection.find_one({"_id": ObjectId(body.showroom_id)})
+    if not showroom:
+        raise HTTPException(status_code=404, detail="Showroom not found")
+
+    # Compute end_time from movie duration + 30-minute cleanup buffer
+    duration = movie.get("duration_minutes")
+    if not duration:
+        raise HTTPException(
+            status_code=400,
+            detail="Movie is missing duration_minutes. Update the movie before scheduling.",
+        )
+
+    start_dt = datetime.strptime(f"{body.date} {body.start_time}", "%Y-%m-%d %H:%M")
+    end_dt = start_dt + timedelta(minutes=duration + 30)
+    end_time_str = end_dt.strftime("%H:%M")
+
+    # Conflict check: find any showtime in the same showroom on the same date
+    # whose time window overlaps with the new one.
+    # Overlap condition: existing.start < new.end  AND  existing.end > new.start
+    existing_showtimes = showtimes_collection.find(
+        {"showroom_id": body.showroom_id, "date": body.date}
+    )
+    async for existing in existing_showtimes:
+        ex_start = datetime.strptime(
+            f"{existing['date']} {existing['start_time']}", "%Y-%m-%d %H:%M"
+        )
+        ex_end = datetime.strptime(
+            f"{existing['date']} {existing['end_time']}", "%Y-%m-%d %H:%M"
+        )
+        if ex_start < end_dt and ex_end > start_dt:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"{showroom['name']} is already booked from "
+                    f"{existing['start_time']} to {existing['end_time']} on {body.date}."
+                ),
+            )
+
+    showtime_doc = {
+        "movie_id": body.movie_id,
+        "movie_title": movie["title"],
+        "showroom_id": body.showroom_id,
+        "showroom_name": showroom["name"],
+        "date": body.date,
+        "start_time": body.start_time,
+        "end_time": end_time_str,
+        "createdAt": int(time.time()),
+    }
+
+    result = await showtimes_collection.insert_one(showtime_doc)
+    created = await showtimes_collection.find_one({"_id": result.inserted_id})
+    return showtime_serializer(created)
+
+
+@app.get("/movies/{movie_id}/showtimes")
+async def get_showtimes_for_movie(movie_id: str):
+    """
+    Return all upcoming showtimes for a given movie, sorted by date then start_time.
+    No authentication required — used by the user-facing movie page.
+    """
+    if not ObjectId.is_valid(movie_id):
+        raise HTTPException(status_code=400, detail="Invalid movie ID")
+
+    movie = await collection.find_one({"_id": ObjectId(movie_id)})
+    if not movie:
+        raise HTTPException(status_code=404, detail="Movie not found")
+
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    showtimes = []
+    async for showtime in showtimes_collection.find(
+        {"movie_id": movie_id, "date": {"$gte": today}},
+        sort=[("date", 1), ("start_time", 1)],
+    ):
+        showtimes.append(showtime_serializer(showtime))
+
+    return showtimes
+
+
+# ---------- Bookings ----------
+
+@app.get("/showtimes/{showtime_id}/seats")
+async def get_seats_for_showtime(showtime_id: str):
+    """
+    Return the showroom's full seat layout for a showtime, with each seat
+    marked as available or booked.  No auth required — used to render the
+    seat map before the user logs in.
+    """
+    if not ObjectId.is_valid(showtime_id):
+        raise HTTPException(status_code=400, detail="Invalid showtime ID")
+
+    showtime = await showtimes_collection.find_one({"_id": ObjectId(showtime_id)})
+    if not showtime:
+        raise HTTPException(status_code=404, detail="Showtime not found")
+
+    showroom = await showrooms_collection.find_one(
+        {"_id": ObjectId(showtime["showroom_id"])}
+    )
+    if not showroom:
+        raise HTTPException(status_code=404, detail="Showroom not found")
+
+    # Collect every seat that is already reserved or confirmed for this showtime
+    booked_seats: set[str] = set()
+    async for booking in bookings_collection.find(
+        {
+            "showtime_id": showtime_id,
+            "status": {"$in": ["reserved", "confirmed"]},
+        }
+    ):
+        for ticket in booking.get("tickets", []):
+            booked_seats.add(ticket["seat"])
+
+    # Annotate the layout rows
+    annotated_layout = []
+    for row in showroom.get("seat_layout", []):
+        annotated_row = []
+        for seat_id in row:
+            annotated_row.append(
+                {
+                    "seat": seat_id,
+                    "status": "booked" if seat_id in booked_seats else "available",
+                }
+            )
+        annotated_layout.append(annotated_row)
+
+    return {
+        "showtime_id": showtime_id,
+        "showroom_id": showtime["showroom_id"],
+        "showroom_name": showtime.get("showroom_name", ""),
+        "seat_layout": annotated_layout,
+        "total_seats": showroom.get("total_seats", 0),
+        "booked_count": len(booked_seats),
+    }
+
+
+@app.post("/bookings/reserve", status_code=status.HTTP_201_CREATED)
+async def reserve_booking(
+    body: ReserveBooking,
+    current_user=Depends(get_optional_user),
+):
+    """
+    Reserve seats for a showtime.  Auth is optional — anonymous users pass a
+    client-generated session_token so their reservation can be re-attached
+    after login.  Returns the booking document including booking_id.
+
+    Raises 409 if any requested seat is already taken.
+    """
+    if not ObjectId.is_valid(body.showtime_id):
+        raise HTTPException(status_code=400, detail="Invalid showtime ID")
+
+    showtime = await showtimes_collection.find_one({"_id": ObjectId(body.showtime_id)})
+    if not showtime:
+        raise HTTPException(status_code=404, detail="Showtime not found")
+
+    requested_seats = [t.seat for t in body.tickets]
+
+    # Conflict check — any active booking that overlaps with requested seats
+    conflict = await bookings_collection.find_one(
+        {
+            "showtime_id": body.showtime_id,
+            "status": {"$in": ["reserved", "confirmed"]},
+            "tickets.seat": {"$in": requested_seats},
+        }
+    )
+    if conflict:
+        # Find exactly which seats are taken so the frontend can highlight them
+        taken = [
+            t["seat"]
+            for t in conflict.get("tickets", [])
+            if t["seat"] in requested_seats
+        ]
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"The following seats are already booked: {', '.join(taken)}",
+        )
+
+    # Build ticket sub-documents with price per seat
+    ticket_docs = []
+    total_price = 0.0
+    for item in body.tickets:
+        price = TICKET_PRICES.get(item.type, 0.0)
+        ticket_docs.append(
+            {"seat": item.seat, "type": item.type, "price": price}
+        )
+        total_price += price
+
+    booking_doc = {
+        "user_id": str(current_user["_id"]) if current_user else None,
+        "showtime_id": body.showtime_id,
+        "movie_title": showtime.get("movie_title", ""),
+        "showroom_name": showtime.get("showroom_name", ""),
+        "date": showtime.get("date", ""),
+        "start_time": showtime.get("start_time", ""),
+        "tickets": ticket_docs,
+        "total_price": round(total_price, 2),
+        "status": "reserved",
+        "email": current_user.get("email") if current_user else None,
+        "session_token": body.session_token,
+        "created_at": int(time.time()),
+    }
+
+    result = await bookings_collection.insert_one(booking_doc)
+    created = await bookings_collection.find_one({"_id": result.inserted_id})
+    return booking_serializer(created)
+
+
+@app.get("/bookings/{booking_id}/summary")
+async def get_booking_summary(
+    booking_id: str,
+    current_user=Depends(get_optional_user),
+):
+    """
+    Return the full order summary for the checkout page.
+    Accessible by the booking's owner (matched by user_id or session_token).
+    Query param ?session_token=<token> is accepted for anonymous users.
+    """
+    if not ObjectId.is_valid(booking_id):
+        raise HTTPException(status_code=400, detail="Invalid booking ID")
+
+    booking = await bookings_collection.find_one({"_id": ObjectId(booking_id)})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+
+    # Authorise: must be the owning user OR present the correct session token
+    user_id = str(current_user["_id"]) if current_user else None
+    if booking.get("user_id") and booking["user_id"] != user_id:
+        raise HTTPException(status_code=403, detail="Not authorised to view this booking")
+
+    return booking_serializer(booking)
+
+
+@app.put("/bookings/{booking_id}/attach-user")
+async def attach_user_to_booking(
+    booking_id: str,
+    body: AttachUser,
+    current_user=Depends(get_current_user),
+):
+    """
+    Called after a successful login redirect during checkout.
+    Attaches the now-authenticated user to an anonymous booking, provided the
+    session_token matches and the booking has no existing owner.
+    """
+    if not ObjectId.is_valid(booking_id):
+        raise HTTPException(status_code=400, detail="Invalid booking ID")
+
+    booking = await bookings_collection.find_one({"_id": ObjectId(booking_id)})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+
+    if booking.get("status") not in ("reserved",):
+        raise HTTPException(
+            status_code=400,
+            detail="Only a reserved booking can be attached to a user.",
+        )
+
+    if booking.get("user_id") and booking["user_id"] != str(current_user["_id"]):
+        raise HTTPException(
+            status_code=403,
+            detail="This booking already belongs to another user.",
+        )
+
+    if booking.get("session_token") != body.session_token:
+        raise HTTPException(status_code=403, detail="Session token does not match.")
+
+    await bookings_collection.update_one(
+        {"_id": ObjectId(booking_id)},
+        {
+            "$set": {
+                "user_id": str(current_user["_id"]),
+                "email": current_user.get("email"),
+            }
+        },
+    )
+
+    updated = await bookings_collection.find_one({"_id": ObjectId(booking_id)})
+    return booking_serializer(updated)
+
+
+@app.post("/bookings/{booking_id}/checkout")
+async def checkout_booking(
+    booking_id: str,
+    body: ConfirmEmail,
+    current_user=Depends(get_current_user),
+):
+    """
+    Final step before the payment page (mockup).
+    Confirms or updates the contact email on the booking.
+    Ownership is verified — the authenticated user must own this booking.
+    Returns the completed order summary ready for the payment page.
+    """
+    if not ObjectId.is_valid(booking_id):
+        raise HTTPException(status_code=400, detail="Invalid booking ID")
+
+    booking = await bookings_collection.find_one({"_id": ObjectId(booking_id)})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+
+    if booking.get("user_id") != str(current_user["_id"]):
+        raise HTTPException(status_code=403, detail="Not authorised for this booking.")
+
+    if booking.get("status") != "reserved":
+        raise HTTPException(
+            status_code=400,
+            detail="Booking is not in a reservable state.",
+        )
+
+    await bookings_collection.update_one(
+        {"_id": ObjectId(booking_id)},
+        {"$set": {"email": str(body.email).strip().lower()}},
+    )
+
+    updated = await bookings_collection.find_one({"_id": ObjectId(booking_id)})
+    return {
+        "message": "Proceed to payment.",
+        "booking": booking_serializer(updated),
+        "ticket_prices": TICKET_PRICES,
+    }
 
 
 # ---------- Auth endpoints ----------
