@@ -1,3 +1,4 @@
+
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 
@@ -14,6 +15,16 @@ type Movie = {
   poster?: string;
   trailer?: string;
   genre?: string[];
+};
+
+type Showtime = {
+  id: string;
+  movie_id: string;
+  showroom_id: string;
+  showroom_name: string;
+  date: string;
+  start_time: string;
+  end_time?: string;
 };
 
 type ApiState =
@@ -41,23 +52,13 @@ function toYouTubeEmbed(url: string): string {
 export default function MovieDetail() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
+
   const [state, setState] = useState<ApiState>({ status: "loading" });
+  const [showtimes, setShowtimes] = useState<Showtime[]>([]);
+  const [showtimesLoading, setShowtimesLoading] = useState(false);
+
   const [isFavorite, setIsFavorite] = useState(false);
   const [favoriteLoading, setFavoriteLoading] = useState(false);
-
-  const showtimesByMovieId: Record<string, string[]> = useMemo(
-    () => ({
-      "1": ["2:00 PM", "5:00 PM", "8:00 PM"],
-      "2": ["1:30 PM", "4:30 PM", "7:30 PM", "10:15 PM"],
-      "3": ["12:15 PM", "3:15 PM", "6:15 PM", "9:15 PM"],
-    }),
-    []
-  );
-
-  const showtimes = useMemo(() => {
-    if (!id) return ["2:00 PM", "5:00 PM", "8:00 PM"];
-    return showtimesByMovieId[id] ?? ["2:00 PM", "5:00 PM", "8:00 PM"];
-  }, [id, showtimesByMovieId]);
 
   useEffect(() => {
     if (!id) {
@@ -67,7 +68,7 @@ export default function MovieDetail() {
 
     let cancelled = false;
 
-    async function load() {
+    async function loadMovie() {
       setState({ status: "loading" });
 
       try {
@@ -82,11 +83,40 @@ export default function MovieDetail() {
       }
     }
 
-    load();
+    loadMovie();
 
     return () => {
       cancelled = true;
     };
+  }, [id]);
+
+  // ✅ FIXED: showtimes now correctly fetched from backend
+  useEffect(() => {
+    if (!id) return;
+
+    const loadShowtimes = async () => {
+      try {
+        setShowtimesLoading(true);
+
+        const res = await fetch(
+          `${API_BASE}/movies/${id}/showtimes`
+        );
+
+        if (!res.ok) {
+          setShowtimes([]);
+          return;
+        }
+
+        const data = await res.json();
+        setShowtimes(Array.isArray(data) ? data : []);
+      } catch {
+        setShowtimes([]);
+      } finally {
+        setShowtimesLoading(false);
+      }
+    };
+
+    loadShowtimes();
   }, [id]);
 
   useEffect(() => {
@@ -105,16 +135,14 @@ export default function MovieDetail() {
 
         if (!res.ok) return;
 
-        const favorites: Movie[] = await res.json();
+        const favorites: any[] = await res.json();
         const isSaved = favorites.some((movie: any) => {
           const movieId = movie._id ?? movie.id;
           return movieId === id;
         });
 
         setIsFavorite(isSaved);
-      } catch {
-        // leave silent for now
-      }
+      } catch {}
     };
 
     checkFavorite();
@@ -135,26 +163,21 @@ export default function MovieDetail() {
       if (isFavorite) {
         const res = await fetch(`${API_BASE}/me/favorites/${id}`, {
           method: "DELETE",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+          headers: { Authorization: `Bearer ${token}` },
         });
 
-        if (!res.ok) throw new Error("Failed to remove favorite");
+        if (!res.ok) throw new Error();
         setIsFavorite(false);
       } else {
         const res = await fetch(`${API_BASE}/me/favorites/${id}`, {
           method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
+          headers: { Authorization: `Bearer ${token}` },
         });
 
-        if (!res.ok) throw new Error("Failed to save favorite");
+        if (!res.ok) throw new Error();
         setIsFavorite(true);
       }
-    } catch (err) {
-      console.error(err);
+    } catch {
       alert("Could not update favorites.");
     } finally {
       setFavoriteLoading(false);
@@ -207,12 +230,11 @@ export default function MovieDetail() {
 
             <div style={styles.metaRow}>
               {movie.rating && <span style={styles.pill}>{movie.rating}</span>}
-              {movie.genre &&
-                movie.genre.map((g) => (
-                  <span key={g} style={styles.pill}>
-                    {g}
-                  </span>
-                ))}
+              {movie.genre?.map((g) => (
+                <span key={g} style={styles.pill}>
+                  {g}
+                </span>
+              ))}
             </div>
 
             <div style={styles.actionRow}>
@@ -238,25 +260,33 @@ export default function MovieDetail() {
               <p style={styles.description}>{movie.description}</p>
             )}
 
+            {/* SHOWTIMES FIXED */}
             <div style={styles.section}>
               <h3 style={styles.sectionTitle}>Showtimes</h3>
-              <div style={styles.timesRow}>
-                {showtimes.map((t) => (
-                  <button
-                    key={t}
-                    style={styles.timeBtn}
-                    onClick={() =>
-                      navigate(
-                        `/booking/${encodeURIComponent(
-                          movie.title
-                        )}?time=${encodeURIComponent(t)}`
-                      )
-                    }
-                  >
-                    {t}
-                  </button>
-                ))}
-              </div>
+
+              {showtimesLoading ? (
+                <p style={{ color: "white" }}>Loading showtimes…</p>
+              ) : showtimes.length === 0 ? (
+                <p style={styles.sectionHint}>No showtimes available.</p>
+              ) : (
+                <div style={styles.timesRow}>
+                  {showtimes.map((t) => (
+                    <button
+                      key={t.id}
+                      style={styles.timeBtn}
+                      onClick={() =>
+                        navigate(
+                          `/booking/${encodeURIComponent(
+                            movie.title
+                          )}?time=${encodeURIComponent(t.start_time)}`
+                        )
+                      }
+                    >
+                      {t.start_time}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div style={styles.section}>
@@ -276,13 +306,13 @@ export default function MovieDetail() {
                 <p style={styles.sectionHint}>No trailer available.</p>
               )}
             </div>
+
           </div>
         </div>
       </div>
     </div>
   );
 }
-
 const styles: Record<string, React.CSSProperties> = {
   page: {
     position: "fixed",
