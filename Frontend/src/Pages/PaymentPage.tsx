@@ -36,108 +36,91 @@ export default function PaymentPage() {
     showtime,
     showtimeId,
     email,
-    selectedSeats,
-    adultQty,
-    childQty,
-    seniorQty,
-    totalPrice,
+    selectedSeats = [],
+    adultQty = 0,
+    childQty = 0,
+    seniorQty = 0,
+    totalPrice = 0,
+    bookingId,
   } = state;
 
-const handlePayment = async () => {
-  try {
-    setLoading(true);
-    setError("");
+  const handlePayment = async () => {
+    try {
+      setLoading(true);
+      setError("");
 
-    if (!cardName || !cardNumber || !expiry || !cvv) {
-      throw new Error("Please fill in all payment details");
+      if (!cardName.trim() || !cardNumber.trim() || !expiry.trim() || !cvv.trim()) {
+        throw new Error("Please fill in all payment details");
+      }
+
+      const token = localStorage.getItem("access_token");
+
+      if (!token) {
+        throw new Error("You must be logged in to complete payment");
+      }
+
+      if (!bookingId) {
+        throw new Error("Booking ID missing. Please go back and try again.");
+      }
+
+      if (!email?.trim()) {
+        throw new Error("Email is required");
+      }
+
+      const emailRes = await fetch(`${API_BASE}/send-confirmation-email`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          booking_id: bookingId,
+          email: email.trim(),
+        }),
+      });
+
+      if (!emailRes.ok) {
+        let message = "Email confirmation failed";
+
+        try {
+          const msg = await emailRes.json();
+          message = msg.detail || msg.message || message;
+        } catch {
+          // ignore parse failure
+        }
+
+        throw new Error(message);
+      }
+
+      await emailRes.json();
+
+      setPopup(true);
+
+      setTimeout(() => {
+        setPopup(false);
+        localStorage.removeItem("booking_id");
+        navigate("/");
+      }, 1500);
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || "Payment failed");
+    } finally {
+      setLoading(false);
     }
-
-    const token = localStorage.getItem("access_token");
-
-    const ticketTypes = [
-      ...Array(adultQty).fill("adult"),
-      ...Array(childQty).fill("child"),
-      ...Array(seniorQty).fill("senior"),
-    ];
-
-    const sessionToken =
-      localStorage.getItem("session_token") || crypto.randomUUID();
-
-    localStorage.setItem("session_token", sessionToken);
-
-    
-    const reserveRes = await fetch(`${API_BASE}/bookings/reserve`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token || ""}`,
-      },
-      body: JSON.stringify({
-        showtime_id: showtimeId,
-        tickets: selectedSeats.map((seat: string, i: number) => ({
-          seat,
-          type: ticketTypes[i],
-        })),
-        session_token: sessionToken,
-      }),
-    });
-
-    if (!reserveRes.ok) {
-      const msg = await reserveRes.json();
-      throw new Error(msg.detail || "Booking failed");
-    }
-
-    await reserveRes.json();
-
-    
-    const emailRes = await fetch(`${API_BASE}/send-confirmation-email`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        email,
-        movieTitle,
-        showtime,
-        seats: selectedSeats.join(", "),
-        totalPrice,
-      }),
-    });
-
-    if (!emailRes.ok) {
-      const msg = await emailRes.json();
-      throw new Error(msg.detail || "Email failed");
-    }
-
-   
-    setPopup(true);
-
-    setTimeout(() => {
-      setPopup(false);
-      navigate("/");
-    }, 1500);
-
-  } catch (err: any) {
-    console.error(err);
-    setError(err.message || "Payment failed");
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   return (
     <div style={styles.page}>
       <div style={styles.container}>
         <h1 style={styles.title}>Payment Processing</h1>
 
-       
         <div style={styles.card}>
           <p><b>Movie:</b> {movieTitle}</p>
           <p><b>Showtime:</b> {showtime}</p>
           <p><b>Email:</b> {email}</p>
           <p><b>Seats:</b> {selectedSeats.join(", ")}</p>
           <hr style={{ opacity: 0.2, margin: "10px 0" }} />
-          <p><b>Total Amount:</b> ${totalPrice.toFixed(2)}</p>
+          <p><b>Total Amount:</b> ${Number(totalPrice).toFixed(2)}</p>
         </div>
 
         <div style={styles.card}>
@@ -181,7 +164,6 @@ const handlePayment = async () => {
         </button>
       </div>
 
-    
       {popup && (
         <div style={styles.overlay}>
           <div style={styles.popup}>
@@ -193,7 +175,6 @@ const handlePayment = async () => {
     </div>
   );
 }
-
 
 const styles: Record<string, React.CSSProperties> = {
   page: {
@@ -255,7 +236,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: 30,
     borderRadius: 16,
     border: "1px solid rgba(255,255,255,0.2)",
-    textAlign: "center",
+    textAlign: "center" as const,
     color: "white",
   },
 };

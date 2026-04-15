@@ -10,12 +10,7 @@ interface Seat {
 const API_BASE = "http://127.0.0.1:8000";
 
 function BookingPage() {
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const navigate = useNavigate();
-  const checkAuth = () => {
-    const token = localStorage.getItem("access_token");
-    setIsLoggedIn(!!token);
-  };
   const bgUrl = "/images/backgroundImage.jpg";
   const { title } = useParams();
   const [searchParams] = useSearchParams();
@@ -28,12 +23,7 @@ function BookingPage() {
     child: 7.99,
     senior: 7.99,
   };
-  const [showLoginModal, setShowLoginModal] = useState(false);
-  const [loginError, setLoginError] = useState("");
-  const [loginForm, setLoginForm] = useState({
-    username: "",
-    password: "",
-  });
+
   const [adultQty, setAdultQty] = useState(0);
   const [childQty, setChildQty] = useState(0);
   const [seniorQty, setSeniorQty] = useState(0);
@@ -51,23 +41,12 @@ function BookingPage() {
     seniorQty * PRICES.senior;
 
   const savePendingBooking = (data: any) => {
-  sessionStorage.setItem("pending_booking", JSON.stringify(data));
-};
-
-const getPendingBooking = () => {
-  try {
-    const data = sessionStorage.getItem("pending_booking");
-    return data ? JSON.parse(data) : null;
-  } catch {
-    return null;
-  }
-};
+    sessionStorage.setItem("pending_booking", JSON.stringify(data));
+  };
 
   const fetchSeats = async () => {
-    
     if (!showtimeId) {
       setError("Missing showtime ID");
-      
       setLoadingSeats(false);
       return;
     }
@@ -76,9 +55,7 @@ const getPendingBooking = () => {
       setLoadingSeats(true);
       setError("");
 
-      const res = await fetch(
-        `${API_BASE}/showtimes/${showtimeId}/seats`
-      );
+      const res = await fetch(`${API_BASE}/showtimes/${showtimeId}/seats`);
 
       if (!res.ok) {
         const text = await res.text();
@@ -87,16 +64,13 @@ const getPendingBooking = () => {
 
       const data = await res.json();
 
-      console.log("Seat API response:", data); // 🔥 DEBUG
-
       const safeLayout: Seat[][] = Array.isArray(data.seat_layout)
         ? data.seat_layout.map((row: any[]) =>
             row.map((seatItem: any) => {
-              // 🔥 handle BOTH formats
               if (typeof seatItem === "string") {
                 return {
                   seat: seatItem,
-                  status: "available", // default
+                  status: "available",
                 };
               }
 
@@ -121,7 +95,6 @@ const getPendingBooking = () => {
     fetchSeats();
   }, [showtimeId]);
 
-  // 🎟️ Toggle seat
   const toggleSeat = (seatId: string, isBooked: boolean) => {
     if (!seatId || isBooked) return;
 
@@ -148,32 +121,41 @@ const getPendingBooking = () => {
     });
   };
 
-  // 🎯 Reserve seats
-
-  const bookingState = {
-  movieTitle: title || "Unknown Movie",
-  showtimeId,
-  showtime: time,
-  selectedSeats: Array.from(selectedSeats),
-
-  adultQty,
-  childQty,
-  seniorQty,
-
-  pricePerTicket: {
-    adult: PRICES.adult,
-    child: PRICES.child,
-    senior: PRICES.senior,
-  },
-
-  totalTickets,
-  totalPrice,
-};
   const handleReserve = async () => {
     if (!showtimeId || totalTickets === 0) return;
 
     if (selectedSeats.size !== totalTickets) {
       alert("Seats must match tickets.");
+      return;
+    }
+
+    const bookingState = {
+      movieTitle: title || "Unknown Movie",
+      showtimeId,
+      showtime: time,
+      selectedSeats: Array.from(selectedSeats),
+      adultQty,
+      childQty,
+      seniorQty,
+      pricePerTicket: {
+        adult: PRICES.adult,
+        child: PRICES.child,
+        senior: PRICES.senior,
+      },
+      totalTickets,
+      totalPrice,
+    };
+
+    const token = localStorage.getItem("access_token");
+
+    if (!token) {
+      savePendingBooking(bookingState);
+
+      navigate("/login", {
+        replace: true,
+        state: { from: "/checkout" },
+      });
+
       return;
     }
 
@@ -201,7 +183,10 @@ const getPendingBooking = () => {
     try {
       const res = await fetch(`${API_BASE}/bookings/reserve`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify(payload),
       });
 
@@ -212,26 +197,24 @@ const getPendingBooking = () => {
         return;
       }
 
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || "Failed to reserve seats.");
+      }
+
       const data = await res.json();
-      console.log("Booking:", data);
 
       localStorage.setItem("booking_id", data.id);
 
-      alert("Seats reserved!");
-      navigate("/");
-      setSelectedSeats(new Set());
-      fetchSeats();
-    } catch (err) {
+      navigate("/confirmation", { state: bookingState });
+    } catch (err: any) {
       console.error("Reserve error:", err);
+      alert(err.message || "Failed to reserve seats.");
     }
   };
 
   if (loadingSeats) return <div style={styles.center}>Loading seats...</div>;
   if (error) return <div style={styles.center}>{error}</div>;
-  console.log("showtimeId:", showtimeId);
-console.log("loadingSeats:", loadingSeats);
-console.log("error:", error);
-console.log("seatLayout:", seatLayout);
 
   return (
     <div style={styles.page}>
@@ -243,20 +226,33 @@ console.log("seatLayout:", seatLayout);
           <h2>{title}</h2>
           <p>{time}</p>
 
-          {/* Tickets */}
           <div style={styles.ticketSection}>
-            <TicketRow label="Adult" price={PRICES.adult} value={adultQty} onChange={setAdultQty} />
-            <TicketRow label="Child" price={PRICES.child} value={childQty} onChange={setChildQty} />
-            <TicketRow label="Senior" price={PRICES.senior} value={seniorQty} onChange={setSeniorQty} />
+            <TicketRow
+              label="Adult"
+              price={PRICES.adult}
+              value={adultQty}
+              onChange={setAdultQty}
+            />
+            <TicketRow
+              label="Child"
+              price={PRICES.child}
+              value={childQty}
+              onChange={setChildQty}
+            />
+            <TicketRow
+              label="Senior"
+              price={PRICES.senior}
+              value={seniorQty}
+              onChange={setSeniorQty}
+            />
           </div>
 
           <h2>Total: ${totalPrice.toFixed(2)}</h2>
 
-          {/* Seats */}
           <div style={styles.gridWrapper}>
             {seatLayout.map((row, i) => (
               <div key={i} style={styles.row}>
-                {row.map((seatObj, j) => {
+                {row.map((seatObj) => {
                   const isBooked = seatObj.status === "booked";
                   const isSelected = selectedSeats.has(seatObj.seat);
 
@@ -282,48 +278,12 @@ console.log("seatLayout:", seatLayout);
           </div>
 
           <button
-  style={styles.confirmBtn}
- onClick={() => {
-  const token = localStorage.getItem("access_token");
-
-  if (selectedSeats.size !== totalTickets) return;
-
-  const bookingState = {
-    movieTitle: title || "Unknown Movie",
-    showtimeId,
-    showtime: time,
-    selectedSeats: Array.from(selectedSeats),
-    adultQty,
-    childQty,
-    seniorQty,
-    pricePerTicket: {
-      adult: PRICES.adult,
-      child: PRICES.child,
-      senior: PRICES.senior,
-    },
-    totalTickets,
-    totalPrice,
-  };
-
-  // ❌ NOT logged in → SAVE + go login
-  if (!token) {
-    savePendingBooking(bookingState);
-
-    navigate("/login", {
-      replace: true,
-      state: { from: "/checkout" }
-    });
-
-    return;
-  }
-
-  // ✅ logged in → go checkout
-  navigate("/confirmation", { state: bookingState });
-}}
-  disabled={selectedSeats.size !== totalTickets}
->
-  Confirm Booking
-</button>
+            style={styles.confirmBtn}
+            onClick={handleReserve}
+            disabled={selectedSeats.size !== totalTickets}
+          >
+            Confirm Booking
+          </button>
         </div>
       </div>
     </div>
@@ -333,7 +293,9 @@ console.log("seatLayout:", seatLayout);
 function TicketRow({ label, price, value, onChange }: any) {
   return (
     <div style={styles.rowTicket}>
-      <span>{label} (${price})</span>
+      <span>
+        {label} (${price})
+      </span>
       <select value={value} onChange={(e) => onChange(Number(e.target.value))}>
         {[0, 1, 2, 3, 4, 5].map((n) => (
           <option key={n}>{n}</option>
@@ -346,27 +308,49 @@ function TicketRow({ label, price, value, onChange }: any) {
 const styles: Record<string, CSSProperties> = {
   page: { minHeight: "100vh", background: "#0a0a0c" },
   bg: {
-  position: "fixed",
-  inset: 0,
-  backgroundSize: "cover",
-  zIndex: 0, 
-},
-
-overlay: {
-  position: "relative",
-  zIndex: 1, 
-  minHeight: "100vh",
-  background: "rgba(0,0,0,0.8)",
-  padding: 40,
-},
+    position: "fixed",
+    inset: 0,
+    backgroundSize: "cover",
+    zIndex: 0,
+  },
+  overlay: {
+    position: "relative",
+    zIndex: 1,
+    minHeight: "100vh",
+    background: "rgba(0,0,0,0.8)",
+    padding: 40,
+  },
   container: { maxWidth: 900, margin: "0 auto", color: "white" },
   ticketSection: { marginTop: 20 },
-  rowTicket: { display: "flex", justifyContent: "space-between", marginBottom: 10 },
-  gridWrapper: { marginTop: 30, display: "flex", flexDirection: "column", alignItems: "center", gap: 8 },
+  rowTicket: {
+    display: "flex",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
+  gridWrapper: {
+    marginTop: 30,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: 8,
+  },
   row: { display: "flex", gap: 8 },
   seat: { width: 35, height: 35, borderRadius: 6 },
-  confirmBtn: { marginTop: 20, width: "100%", padding: 12, background: "#e74c3c", color: "white", border: "none" },
-  center: { height: "100vh", display: "flex", justifyContent: "center", alignItems: "center", color: "white" },
+  confirmBtn: {
+    marginTop: 20,
+    width: "100%",
+    padding: 12,
+    background: "#e74c3c",
+    color: "white",
+    border: "none",
+  },
+  center: {
+    height: "100vh",
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    color: "white",
+  },
 };
 
 export default BookingPage;
