@@ -10,13 +10,13 @@ interface Seat {
 const API_BASE = "http://127.0.0.1:8000";
 
 function BookingPage() {
+ 
   const bgUrl = "/images/backgroundImage.jpg";
   const { title } = useParams();
   const [searchParams] = useSearchParams();
 
   const time = searchParams.get("time");
   const showtimeId = searchParams.get("showtime_id");
-  
 
   const PRICES = {
     adult: 12.99,
@@ -34,15 +34,18 @@ function BookingPage() {
   const [error, setError] = useState("");
 
   const totalTickets = adultQty + childQty + seniorQty;
+
   const totalPrice =
     adultQty * PRICES.adult +
     childQty * PRICES.child +
     seniorQty * PRICES.senior;
 
-  // 🔁 Fetch seats (SAFE)
+  // 🔁 Fetch seats
   const fetchSeats = async () => {
+    
     if (!showtimeId) {
       setError("Missing showtime ID");
+      
       setLoadingSeats(false);
       return;
     }
@@ -51,26 +54,41 @@ function BookingPage() {
       setLoadingSeats(true);
       setError("");
 
-      const res = await fetch(`${API_BASE}/showtimes/${showtimeId}/seats`) ;
-      if (!res.ok) throw new Error(`Error ${res.status}`);
+      const res = await fetch(
+        `${API_BASE}/showtimes/${showtimeId}/seats`
+      );
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text);
+      }
 
       const data = await res.json();
 
-      // ✅ SAFE parsing (prevents crash)
+      console.log("Seat API response:", data); // 🔥 DEBUG
+
       const safeLayout: Seat[][] = Array.isArray(data.seat_layout)
         ? data.seat_layout.map((row: any[]) =>
-            Array.isArray(row)
-              ? row.map((seatObj: any) => ({
-                  seat: seatObj?.seat ?? "",
-                  status: seatObj?.status ?? "available",
-                }))
-              : []
+            row.map((seatItem: any) => {
+              // 🔥 handle BOTH formats
+              if (typeof seatItem === "string") {
+                return {
+                  seat: seatItem,
+                  status: "available", // default
+                };
+              }
+
+              return {
+                seat: seatItem?.seat ?? "",
+                status: seatItem?.status ?? "available",
+              };
+            })
           )
         : [];
 
       setSeatLayout(safeLayout);
     } catch (err) {
-      console.error(err);
+      console.error("Seat fetch error:", err);
       setError("Failed to load seats.");
     } finally {
       setLoadingSeats(false);
@@ -108,7 +126,7 @@ function BookingPage() {
     });
   };
 
-  // 🎯 Reserve
+  // 🎯 Reserve seats
   const handleReserve = async () => {
     if (!showtimeId || totalTickets === 0) return;
 
@@ -123,7 +141,7 @@ function BookingPage() {
       localStorage.setItem("session_token", sessionToken);
     }
 
-    const tickets = [
+    const ticketTypes = [
       ...Array(adultQty).fill("adult"),
       ...Array(childQty).fill("child"),
       ...Array(seniorQty).fill("senior"),
@@ -133,7 +151,7 @@ function BookingPage() {
       showtime_id: showtimeId,
       tickets: Array.from(selectedSeats).map((seat, i) => ({
         seat,
-        type: tickets[i],
+        type: ticketTypes[i],
       })),
       session_token: sessionToken,
     };
@@ -153,26 +171,31 @@ function BookingPage() {
       }
 
       const data = await res.json();
+      console.log("Booking:", data);
+
       localStorage.setItem("booking_id", data.id);
 
-      alert("Reserved!");
-      fetchSeats();
+      alert("Seats reserved!");
       setSelectedSeats(new Set());
+      fetchSeats();
     } catch (err) {
-      console.error(err);
+      console.error("Reserve error:", err);
     }
   };
 
-  // ⏳ States
-  if (loadingSeats) return <div style={styles.center}>Loading...</div>;
+  if (loadingSeats) return <div style={styles.center}>Loading seats...</div>;
   if (error) return <div style={styles.center}>{error}</div>;
+  console.log("showtimeId:", showtimeId);
+console.log("loadingSeats:", loadingSeats);
+console.log("error:", error);
+console.log("seatLayout:", seatLayout);
 
   return (
     <div style={styles.page}>
       <div style={{ ...styles.bg, backgroundImage: `url(${bgUrl})` }} />
       <div style={styles.overlay}>
         <div style={styles.container}>
-          <h1 style={styles.header}>Checkout</h1>
+          <h1>Checkout</h1>
 
           <h2>{title}</h2>
           <p>{time}</p>
@@ -184,21 +207,19 @@ function BookingPage() {
             <TicketRow label="Senior" price={PRICES.senior} value={seniorQty} onChange={setSeniorQty} />
           </div>
 
-          <h2 style={styles.total}>Total: ${totalPrice.toFixed(2)}</h2>
+          <h2>Total: ${totalPrice.toFixed(2)}</h2>
 
           {/* Seats */}
           <div style={styles.gridWrapper}>
             {seatLayout.map((row, i) => (
               <div key={i} style={styles.row}>
                 {row.map((seatObj, j) => {
-                  if (!seatObj?.seat) return null;
-
                   const isBooked = seatObj.status === "booked";
                   const isSelected = selectedSeats.has(seatObj.seat);
 
                   return (
                     <div
-                      key={seatObj.seat || j}
+                      key={seatObj.seat}
                       onClick={() => toggleSeat(seatObj.seat, isBooked)}
                       style={{
                         ...styles.seat,
@@ -209,6 +230,7 @@ function BookingPage() {
                           : "#e74c3c",
                         cursor: isBooked ? "not-allowed" : "pointer",
                       }}
+                      title={seatObj.seat}
                     />
                   );
                 })}
@@ -221,7 +243,7 @@ function BookingPage() {
             onClick={handleReserve}
             disabled={selectedSeats.size !== totalTickets}
           >
-            Confirm
+            Confirm Booking
           </button>
         </div>
       </div>
@@ -244,41 +266,28 @@ function TicketRow({ label, price, value, onChange }: any) {
 
 const styles: Record<string, CSSProperties> = {
   page: { minHeight: "100vh", background: "#0a0a0c" },
-  bg: { position: "fixed", inset: 0, backgroundSize: "cover" },
-  overlay: { minHeight: "100vh", background: "rgba(0,0,0,0.8)", padding: 40 },
+  bg: {
+  position: "fixed",
+  inset: 0,
+  backgroundSize: "cover",
+  zIndex: 0, 
+},
+
+overlay: {
+  position: "relative",
+  zIndex: 1, 
+  minHeight: "100vh",
+  background: "rgba(0,0,0,0.8)",
+  padding: 40,
+},
   container: { maxWidth: 900, margin: "0 auto", color: "white" },
-  header: { textAlign: "center" },
   ticketSection: { marginTop: 20 },
   rowTicket: { display: "flex", justifyContent: "space-between", marginBottom: 10 },
-  total: { marginTop: 20 },
-  gridWrapper: {
-    marginTop: 30,
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    gap: 8,
-  },
+  gridWrapper: { marginTop: 30, display: "flex", flexDirection: "column", alignItems: "center", gap: 8 },
   row: { display: "flex", gap: 8 },
-  seat: {
-    width: 35,
-    height: 35,
-    borderRadius: 6,
-  },
-  confirmBtn: {
-    marginTop: 20,
-    width: "100%",
-    padding: 12,
-    background: "#e74c3c",
-    color: "white",
-    border: "none",
-  },
-  center: {
-    height: "100vh",
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
-    color: "white",
-  },
+  seat: { width: 35, height: 35, borderRadius: 6 },
+  confirmBtn: { marginTop: 20, width: "100%", padding: 12, background: "#e74c3c", color: "white", border: "none" },
+  center: { height: "100vh", display: "flex", justifyContent: "center", alignItems: "center", color: "white" },
 };
 
 export default BookingPage;

@@ -1,4 +1,3 @@
-
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useParams, useNavigate } from "react-router-dom";
 
@@ -18,19 +17,26 @@ type Movie = {
 };
 
 type Showtime = {
-  id: string;
+  _id?: string;
+  id?: string;
   movie_id: string;
-  showroom_id: string;
-  showroom_name: string;
+  showroom_id?: string;
+  showroom_name?: string;
   date: string;
   start_time: string;
   end_time?: string;
+  movie_title?: string;
 };
 
 type ApiState =
   | { status: "loading" }
   | { status: "error"; message: string }
   | { status: "success"; movie: Movie };
+
+type ShowtimesState =
+  | { status: "loading"; showtimes: Showtime[] }
+  | { status: "error"; message: string; showtimes: Showtime[] }
+  | { status: "success"; showtimes: Showtime[] };
 
 function toYouTubeEmbed(url: string): string {
   try {
@@ -49,16 +55,56 @@ function toYouTubeEmbed(url: string): string {
   return url;
 }
 
+function formatTimeToDisplay(time24: string): string {
+  const [hourStr, minuteStr] = time24.split(":");
+  const hour = Number(hourStr);
+  const minute = Number(minuteStr);
+
+  if (
+    Number.isNaN(hour) ||
+    Number.isNaN(minute) ||
+    hour < 0 ||
+    hour > 23 ||
+    minute < 0 ||
+    minute > 59
+  ) {
+    return time24;
+  }
+
+  const period = hour >= 12 ? "PM" : "AM";
+  const hour12 = hour % 12 === 0 ? 12 : hour % 12;
+  return `${hour12}:${minuteStr.padStart(2, "0")} ${period}`;
+}
+
+function formatDateToDisplay(dateStr: string): string {
+  const parsed = new Date(`${dateStr}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return dateStr;
+
+  return parsed.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
 export default function MovieDetail() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
-
   const [state, setState] = useState<ApiState>({ status: "loading" });
-  const [showtimes, setShowtimes] = useState<Showtime[]>([]);
-  const [showtimesLoading, setShowtimesLoading] = useState(false);
-
+  const [showtimesState, setShowtimesState] = useState<ShowtimesState>({
+    status: "loading",
+    showtimes: [],
+  });
   const [isFavorite, setIsFavorite] = useState(false);
   const [favoriteLoading, setFavoriteLoading] = useState(false);
+
+  const sortedShowtimes = useMemo(() => {
+    return [...showtimesState.showtimes].sort((a, b) => {
+      const aValue = `${a.date} ${a.start_time}`;
+      const bValue = `${b.date} ${b.start_time}`;
+      return aValue.localeCompare(bValue);
+    });
+  }, [showtimesState.showtimes]);
 
   useEffect(() => {
     if (!id) {
@@ -68,7 +114,7 @@ export default function MovieDetail() {
 
     let cancelled = false;
 
-    async function loadMovie() {
+    async function load() {
       setState({ status: "loading" });
 
       try {
@@ -83,40 +129,63 @@ export default function MovieDetail() {
       }
     }
 
-    loadMovie();
+    load();
 
     return () => {
       cancelled = true;
     };
   }, [id]);
 
-  // ✅ FIXED: showtimes now correctly fetched from backend
   useEffect(() => {
-    if (!id) return;
+    if (!id) {
+      setShowtimesState({
+        status: "error",
+        message: "Missing movie id in URL.",
+        showtimes: [],
+      });
+      return;
+    }
 
-    const loadShowtimes = async () => {
+    let cancelled = false;
+
+    async function loadShowtimes() {
+      setShowtimesState({
+        status: "loading",
+        showtimes: [],
+      });
+
       try {
-        setShowtimesLoading(true);
-
-        const res = await fetch(
-          `${API_BASE}/movies/${id}/showtimes`
-        );
-
+        const res = await fetch(`${API_BASE}/movies/${id}/showtimes`);
         if (!res.ok) {
-          setShowtimes([]);
-          return;
+          throw new Error(`Failed to load showtimes (${res.status})`);
         }
 
         const data = await res.json();
-        setShowtimes(Array.isArray(data) ? data : []);
-      } catch {
-        setShowtimes([]);
-      } finally {
-        setShowtimesLoading(false);
+        const showtimes = Array.isArray(data) ? data : [];
+
+        if (!cancelled) {
+          setShowtimesState({
+            status: "success",
+            showtimes,
+          });
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Unknown error";
+        if (!cancelled) {
+          setShowtimesState({
+            status: "error",
+            message: msg,
+            showtimes: [],
+          });
+        }
       }
-    };
+    }
 
     loadShowtimes();
+
+    return () => {
+      cancelled = true;
+    };
   }, [id]);
 
   useEffect(() => {
@@ -135,14 +204,16 @@ export default function MovieDetail() {
 
         if (!res.ok) return;
 
-        const favorites: any[] = await res.json();
+        const favorites: Movie[] = await res.json();
         const isSaved = favorites.some((movie: any) => {
           const movieId = movie._id ?? movie.id;
           return movieId === id;
         });
 
         setIsFavorite(isSaved);
-      } catch {}
+      } catch {
+        // leave silent for now
+      }
     };
 
     checkFavorite();
@@ -163,21 +234,26 @@ export default function MovieDetail() {
       if (isFavorite) {
         const res = await fetch(`${API_BASE}/me/favorites/${id}`, {
           method: "DELETE",
-          headers: { Authorization: `Bearer ${token}` },
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
         });
 
-        if (!res.ok) throw new Error();
+        if (!res.ok) throw new Error("Failed to remove favorite");
         setIsFavorite(false);
       } else {
         const res = await fetch(`${API_BASE}/me/favorites/${id}`, {
           method: "POST",
-          headers: { Authorization: `Bearer ${token}` },
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
         });
 
-        if (!res.ok) throw new Error();
+        if (!res.ok) throw new Error("Failed to save favorite");
         setIsFavorite(true);
       }
-    } catch {
+    } catch (err) {
+      console.error(err);
       alert("Could not update favorites.");
     } finally {
       setFavoriteLoading(false);
@@ -230,11 +306,12 @@ export default function MovieDetail() {
 
             <div style={styles.metaRow}>
               {movie.rating && <span style={styles.pill}>{movie.rating}</span>}
-              {movie.genre?.map((g) => (
-                <span key={g} style={styles.pill}>
-                  {g}
-                </span>
-              ))}
+              {movie.genre &&
+                movie.genre.map((g) => (
+                  <span key={g} style={styles.pill}>
+                    {g}
+                  </span>
+                ))}
             </div>
 
             <div style={styles.actionRow}>
@@ -260,31 +337,47 @@ export default function MovieDetail() {
               <p style={styles.description}>{movie.description}</p>
             )}
 
-            {/* SHOWTIMES FIXED */}
             <div style={styles.section}>
               <h3 style={styles.sectionTitle}>Showtimes</h3>
 
-              {showtimesLoading ? (
-                <p style={{ color: "white" }}>Loading showtimes…</p>
-              ) : showtimes.length === 0 ? (
+              {showtimesState.status === "loading" ? (
+                <p style={styles.sectionHint}>Loading showtimes...</p>
+              ) : showtimesState.status === "error" ? (
+                <p style={styles.sectionHint}>{showtimesState.message}</p>
+              ) : sortedShowtimes.length === 0 ? (
                 <p style={styles.sectionHint}>No showtimes available.</p>
               ) : (
-                <div style={styles.timesRow}>
-                  {showtimes.map((t) => (
-                    <button
-                      key={t.id}
-                      style={styles.timeBtn}
-                      onClick={() =>
+                <div style={styles.showtimeList}>
+                  {sortedShowtimes.map((showtime) => {
+                    const buttonLabel = `${formatDateToDisplay(
+                      showtime.date
+                    )} • ${formatTimeToDisplay(showtime.start_time)}`;
+
+                    return (
+                      <button
+                        key={`${showtime.id ?? showtime._id ?? ""}-${showtime.date}-${showtime.start_time}`}
+                        style={styles.timeBtn}
+                        onClick={() => {
+                        const showtimeId = showtime.id ?? showtime._id;
+
+                        if (!showtimeId) {
+                          console.error("Missing showtime ID:", showtime);
+                          alert("Invalid showtime data.");
+                          return;
+                        }
+
                         navigate(
-                          `/booking/${encodeURIComponent(
-                            movie.title
-                          )}?time=${encodeURIComponent(t.start_time)}`
-                        )
-                      }
-                    >
-                      {t.start_time}
-                    </button>
-                  ))}
+                          `/booking/${encodeURIComponent(movie.title)}?` +
+                            `time=${encodeURIComponent(showtime.start_time)}` +
+                            `&date=${encodeURIComponent(showtime.date)}` +
+                            `&showtime_id=${encodeURIComponent(showtimeId)}`
+                        );
+                      }}
+                                            >
+                        {buttonLabel}
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -306,13 +399,13 @@ export default function MovieDetail() {
                 <p style={styles.sectionHint}>No trailer available.</p>
               )}
             </div>
-
           </div>
         </div>
       </div>
     </div>
   );
 }
+
 const styles: Record<string, React.CSSProperties> = {
   page: {
     position: "fixed",
@@ -411,7 +504,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 16,
     letterSpacing: 0.4,
   },
-  timesRow: {
+  showtimeList: {
     display: "flex",
     gap: 10,
     flexWrap: "wrap",
