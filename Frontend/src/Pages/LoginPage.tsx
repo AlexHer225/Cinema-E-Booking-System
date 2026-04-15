@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 
 type LoginData = {
   username: string;
@@ -39,7 +39,7 @@ const getErrorMessage = (data: any) => {
 
 const LoginPage: React.FC = () => {
   const navigate = useNavigate();
-
+  const location = useLocation();
   const [formData, setFormData] = useState<LoginData>({
     username: "",
     password: "",
@@ -71,6 +71,16 @@ const LoginPage: React.FC = () => {
     if (!formData.username.trim()) newErrors.username = "Username is required";
     if (!formData.password) newErrors.password = "Password is required";
     return newErrors;
+  };
+  const getPendingBooking = () => {
+    try {
+      const data = sessionStorage.getItem("pending_booking");
+      if (!data) return null;
+      return JSON.parse(data);
+    } catch (err) {
+      console.error("pending_booking parse error:", err);
+      return null;
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -114,11 +124,25 @@ const LoginPage: React.FC = () => {
 
       window.dispatchEvent(new Event("storage"));
 
-      if (formData.username.trim().toLowerCase() === "admin") {
-        navigate("/admin");
-      } else {
-        navigate("/");
+    const pendingBooking = getPendingBooking();
+
+      console.log("pendingBooking:", pendingBooking);
+
+      if (pendingBooking) {
+        sessionStorage.removeItem("pending_booking");
+
+        navigate("/confirmation", { state: pendingBooking });
+        return;
       }
+
+
+const username = formData.username.trim().toLowerCase();
+
+if (username === "admin") {
+  navigate("/admin");
+} else {
+  navigate("/");
+}
     } catch (error) {
       console.error("Login error:", error);
       setServerError("Could not connect to the server.");
