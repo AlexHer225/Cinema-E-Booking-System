@@ -13,7 +13,6 @@ export default function PaymentPage() {
   const [popup, setPopup] = useState(false);
   const [error, setError] = useState("");
 
-  // ---------------- DUMMY PAYMENT INFO ----------------
   const [cardName, setCardName] = useState("John Doe");
   const [cardNumber, setCardNumber] = useState("4242 4242 4242 4242");
   const [expiry, setExpiry] = useState("12/28");
@@ -44,88 +43,103 @@ export default function PaymentPage() {
     totalPrice,
   } = state;
 
-  // ---------------- PAYMENT + RESERVATION ----------------
-  const handlePayment = async () => {
-    try {
-      setLoading(true);
-      setError("");
+const handlePayment = async () => {
+  try {
+    setLoading(true);
+    setError("");
 
-      // validate dummy payment fields
-      if (!cardName || !cardNumber || !expiry || !cvv) {
-        throw new Error("Please fill in all payment details");
-      }
+    if (!cardName || !cardNumber || !expiry || !cvv) {
+      throw new Error("Please fill in all payment details");
+    }
 
-      const token = localStorage.getItem("access_token");
+    const token = localStorage.getItem("access_token");
 
-      const ticketTypes = [
-        ...Array(adultQty).fill("adult"),
-        ...Array(childQty).fill("child"),
-        ...Array(seniorQty).fill("senior"),
-      ];
+    const ticketTypes = [
+      ...Array(adultQty).fill("adult"),
+      ...Array(childQty).fill("child"),
+      ...Array(seniorQty).fill("senior"),
+    ];
 
-      const sessionToken =
-        localStorage.getItem("session_token") || crypto.randomUUID();
+    const sessionToken =
+      localStorage.getItem("session_token") || crypto.randomUUID();
 
-      localStorage.setItem("session_token", sessionToken);
+    localStorage.setItem("session_token", sessionToken);
 
-      const payload = {
+    
+    const reserveRes = await fetch(`${API_BASE}/bookings/reserve`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token || ""}`,
+      },
+      body: JSON.stringify({
         showtime_id: showtimeId,
         tickets: selectedSeats.map((seat: string, i: number) => ({
           seat,
           type: ticketTypes[i],
         })),
         session_token: sessionToken,
-      };
+      }),
+    });
 
-      const res = await fetch(`${API_BASE}/bookings/reserve`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token || ""}`,
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) {
-        const msg = await res.json();
-        throw new Error(msg.detail || "Booking failed");
-      }
-
-      await res.json();
-
-      // success popup
-      setPopup(true);
-
-      setTimeout(() => {
-        setPopup(false);
-        navigate("/");
-      }, 1500);
-    } catch (err: any) {
-      console.error(err);
-      setError(err.message || "Payment failed");
-    } finally {
-      setLoading(false);
+    if (!reserveRes.ok) {
+      const msg = await reserveRes.json();
+      throw new Error(msg.detail || "Booking failed");
     }
-  };
+
+    await reserveRes.json();
+
+    
+    const emailRes = await fetch(`${API_BASE}/send-confirmation-email`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        email,
+        movieTitle,
+        showtime,
+        seats: selectedSeats.join(", "),
+        totalPrice,
+      }),
+    });
+
+    if (!emailRes.ok) {
+      const msg = await emailRes.json();
+      throw new Error(msg.detail || "Email failed");
+    }
+
+   
+    setPopup(true);
+
+    setTimeout(() => {
+      setPopup(false);
+      navigate("/");
+    }, 1500);
+
+  } catch (err: any) {
+    console.error(err);
+    setError(err.message || "Payment failed");
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <div style={styles.page}>
       <div style={styles.container}>
         <h1 style={styles.title}>Payment Processing</h1>
 
-        {/* ORDER SUMMARY */}
+       
         <div style={styles.card}>
           <p><b>Movie:</b> {movieTitle}</p>
           <p><b>Showtime:</b> {showtime}</p>
           <p><b>Email:</b> {email}</p>
           <p><b>Seats:</b> {selectedSeats.join(", ")}</p>
-
           <hr style={{ opacity: 0.2, margin: "10px 0" }} />
-
           <p><b>Total Amount:</b> ${totalPrice.toFixed(2)}</p>
         </div>
 
-        {/* DUMMY PAYMENT FORM */}
         <div style={styles.card}>
           <h3>Payment Details</h3>
 
@@ -162,21 +176,17 @@ export default function PaymentPage() {
 
         {error && <p style={{ color: "red" }}>{error}</p>}
 
-        <button
-          style={styles.btn}
-          onClick={handlePayment}
-          disabled={loading}
-        >
-          {loading ? "Processing Payment..." : "Confirm & Pay"}
+        <button style={styles.btn} onClick={handlePayment} disabled={loading}>
+          {loading ? "Processing..." : "Confirm & Pay"}
         </button>
       </div>
 
-      {/* SUCCESS POPUP */}
+    
       {popup && (
         <div style={styles.overlay}>
           <div style={styles.popup}>
             <h2>Payment Successful 🎉</h2>
-            <p>Booking confirmed. Redirecting to home...</p>
+            <p>Your booking is confirmed. Email sent.</p>
           </div>
         </div>
       )}
@@ -184,7 +194,7 @@ export default function PaymentPage() {
   );
 }
 
-// ---------------- STYLES ----------------
+
 const styles: Record<string, React.CSSProperties> = {
   page: {
     position: "fixed",
@@ -194,20 +204,17 @@ const styles: Record<string, React.CSSProperties> = {
       "radial-gradient(1200px 600px at 20% 10%, rgba(255,255,255,0.08), transparent 60%), rgba(10,10,12,1)",
     overflowY: "auto",
   },
-
   container: {
     maxWidth: 800,
     margin: "0 auto",
     padding: "0 24px",
     color: "white",
   },
-
   title: {
     fontSize: 34,
     fontWeight: 800,
     marginBottom: 20,
   },
-
   card: {
     border: "1px solid rgba(255,255,255,0.14)",
     background: "rgba(255,255,255,0.06)",
@@ -215,7 +222,6 @@ const styles: Record<string, React.CSSProperties> = {
     padding: 20,
     marginBottom: 15,
   },
-
   input: {
     width: "100%",
     padding: "10px",
@@ -227,7 +233,6 @@ const styles: Record<string, React.CSSProperties> = {
     color: "white",
     outline: "none",
   },
-
   btn: {
     padding: "12px 16px",
     borderRadius: 12,
@@ -237,7 +242,6 @@ const styles: Record<string, React.CSSProperties> = {
     cursor: "pointer",
     fontWeight: 800,
   },
-
   overlay: {
     position: "fixed",
     inset: 0,
@@ -246,7 +250,6 @@ const styles: Record<string, React.CSSProperties> = {
     alignItems: "center",
     justifyContent: "center",
   },
-
   popup: {
     background: "#111",
     padding: 30,

@@ -10,8 +10,12 @@ interface Seat {
 const API_BASE = "http://127.0.0.1:8000";
 
 function BookingPage() {
+  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const navigate = useNavigate();
- 
+  const checkAuth = () => {
+    const token = localStorage.getItem("access_token");
+    setIsLoggedIn(!!token);
+  };
   const bgUrl = "/images/backgroundImage.jpg";
   const { title } = useParams();
   const [searchParams] = useSearchParams();
@@ -24,7 +28,12 @@ function BookingPage() {
     child: 7.99,
     senior: 7.99,
   };
-
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [loginError, setLoginError] = useState("");
+  const [loginForm, setLoginForm] = useState({
+    username: "",
+    password: "",
+  });
   const [adultQty, setAdultQty] = useState(0);
   const [childQty, setChildQty] = useState(0);
   const [seniorQty, setSeniorQty] = useState(0);
@@ -262,11 +271,40 @@ console.log("seatLayout:", seatLayout);
 
           <button
   style={styles.confirmBtn}
-  onClick={() => {
-        navigate("/confirmation", {
-          state: bookingState,
-        });
-  }}
+ onClick={() => {
+  const token = localStorage.getItem("access_token");
+
+  const bookingState = {
+    movieTitle: title || "Unknown Movie",
+    showtimeId,
+    showtime: time,
+    selectedSeats: Array.from(selectedSeats),
+    adultQty,
+    childQty,
+    seniorQty,
+    pricePerTicket: {
+      adult: PRICES.adult,
+      child: PRICES.child,
+      senior: PRICES.senior,
+    },
+    totalTickets,
+    totalPrice,
+  };
+
+  // 🚨 must match tickets
+  if (selectedSeats.size !== totalTickets) return;
+
+  // ✅ NOT logged in → save + redirect
+  if (!token) {
+    sessionStorage.setItem("pending_booking", JSON.stringify(bookingState));
+
+    navigate("/login");
+    return;
+  }
+
+  // ✅ logged in → continue
+  navigate("/checkout", { state: bookingState });
+}}
   disabled={selectedSeats.size !== totalTickets}
 >
   Confirm Booking
