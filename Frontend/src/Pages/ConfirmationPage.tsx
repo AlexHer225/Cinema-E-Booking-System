@@ -12,9 +12,6 @@ export default function ConfirmationPage() {
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState("");
 
-  // ---------------------------
-  // Fetch email from profile
-  // ---------------------------
   useEffect(() => {
     const loadEmail = async () => {
       try {
@@ -39,9 +36,6 @@ export default function ConfirmationPage() {
     loadEmail();
   }, []);
 
-  // ---------------------------
-  // Guard
-  // ---------------------------
   if (!state) {
     return (
       <div style={styles.page}>
@@ -67,30 +61,77 @@ export default function ConfirmationPage() {
     totalPrice = 0,
   } = state;
 
-  // ---------------------------
-  // Go directly to payment page (NO POPUP)
-  // ---------------------------
   const handleConfirm = async () => {
     setLoading(true);
 
     try {
+      const token = localStorage.getItem("access_token");
+      const bookingId = localStorage.getItem("booking_id");
+
+      if (!token) {
+        alert("You must be logged in to continue.");
+        navigate("/login");
+        return;
+      }
+
+      if (!bookingId) {
+        alert("Booking ID not found. Please go back and reserve seats again.");
+        return;
+      }
+
+      if (!email.trim()) {
+        alert("Please enter an email address.");
+        return;
+      }
+
+      const checkoutRes = await fetch(
+        `${API_BASE}/bookings/${bookingId}/checkout`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            email: email.trim(),
+          }),
+        }
+      );
+
+      if (!checkoutRes.ok) {
+        let message = "Could not proceed to payment.";
+
+        try {
+          const errData = await checkoutRes.json();
+          message = errData.detail || errData.message || message;
+        } catch {
+          // ignore JSON parse failure
+        }
+
+        throw new Error(message);
+      }
+
+      const checkoutData = await checkoutRes.json();
+
       navigate("/payment", {
         state: {
           movieTitle,
           showtime,
           showtimeId,
-          email,
+          email: email.trim(),
           selectedSeats,
           adultQty,
           childQty,
           seniorQty,
           totalTickets,
           totalPrice,
+          bookingId,
+          checkoutData,
         },
       });
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert("Could not proceed to payment.");
+      alert(err?.message || "Could not proceed to payment.");
     } finally {
       setLoading(false);
     }
@@ -118,15 +159,16 @@ export default function ConfirmationPage() {
           </p>
 
           <p><b>Total Tickets:</b> {totalTickets}</p>
-          <p><b>Total Price:</b> ${totalPrice.toFixed(2)}</p>
+          <p><b>Total Price:</b> ${Number(totalPrice).toFixed(2)}</p>
         </div>
 
-        {/* Email edit */}
         <div style={{ marginTop: 12 }}>
           <h4 style={{ color: "white" }}>Change Email</h4>
           <input
+            type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            placeholder="Enter your email"
             style={{
               width: "100%",
               padding: 10,
@@ -156,7 +198,6 @@ export default function ConfirmationPage() {
   );
 }
 
-// ---------------------------
 const styles: Record<string, React.CSSProperties> = {
   page: {
     position: "fixed",
