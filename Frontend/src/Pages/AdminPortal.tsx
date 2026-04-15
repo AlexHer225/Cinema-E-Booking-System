@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 type User = {
   id: string;
@@ -11,7 +11,15 @@ type User = {
 type Movie = {
   id: string;
   title: string;
+  description: string;
+  trailer: string;
+  poster: string;
   rating: string;
+  genre: string[];
+  currentlyPlaying: boolean;
+  datesPlaying: string[];
+  duration_minutes: number;
+  cast: string[];
 };
 
 type Promotion = {
@@ -22,19 +30,50 @@ type Promotion = {
 
 type Showtime = {
   id: string;
-  movieTitle: string;
+  movie_id: string;
+  showroom_id: string;
+  showroom_name: string;
   date: string;
-  time: string;
-  auditorium: string;
+  start_time: string;
+  end_time: string;
+  movie_title?: string;
+};
+
+type Showroom = {
+  id: string;
+  name: string;
+  total_seats: number;
+  seat_layout: string[][];
+};
+
+type MovieForm = {
+  title: string;
+  description: string;
+  trailer: string;
+  poster: string;
+  rating: string;
+  genreInput: string;
+  duration_minutes: string;
+  castInput: string;
+  currentlyPlaying: boolean;
+};
+
+type ShowtimeForm = {
+  movie_id: string;
+  showroom_id: string;
+  date: string;
+  start_time: string;
 };
 
 const bgUrl = "/images/backgroundImage.jpg";
+const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 export default function AdminMoviesPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [movies, setMovies] = useState<Movie[]>([]);
   const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [showtimes, setShowtimes] = useState<Showtime[]>([]);
+  const [showrooms, setShowrooms] = useState<Showroom[]>([]);
 
   const [showUserModal, setShowUserModal] = useState(false);
   const [showMovieModal, setShowMovieModal] = useState(false);
@@ -49,10 +88,16 @@ export default function AdminMoviesPage() {
     status: "",
   });
 
-  const [newMovie, setNewMovie] = useState<Movie>({
-    id: "",
+  const [newMovie, setNewMovie] = useState<MovieForm>({
     title: "",
+    description: "",
+    trailer: "",
+    poster: "",
     rating: "",
+    genreInput: "",
+    duration_minutes: "",
+    castInput: "",
+    currentlyPlaying: false,
   });
 
   const [newPromo, setNewPromo] = useState<Promotion>({
@@ -61,16 +106,25 @@ export default function AdminMoviesPage() {
     discount: "",
   });
 
-  const [newShowtime, setNewShowtime] = useState<Showtime>({
-    id: "",
-    movieTitle: "",
+  const [newShowtime, setNewShowtime] = useState<ShowtimeForm>({
+    movie_id: "",
+    showroom_id: "",
     date: "",
-    time: "",
-    auditorium: "",
+    start_time: "",
   });
 
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [submittingMovie, setSubmittingMovie] = useState(false);
+  const [submittingShowtime, setSubmittingShowtime] = useState(false);
+
+  const [attemptedUserSubmit, setAttemptedUserSubmit] = useState(false);
+  const [attemptedMovieSubmit, setAttemptedMovieSubmit] = useState(false);
+  const [attemptedPromoSubmit, setAttemptedPromoSubmit] = useState(false);
+  const [attemptedShowtimeSubmit, setAttemptedShowtimeSubmit] = useState(false);
+
+  const token = localStorage.getItem("access_token");
 
   const resetMessages = () => {
     setErrorMessage("");
@@ -97,8 +151,25 @@ export default function AdminMoviesPage() {
     return `${showtimes.length} showtimes`;
   }, [showtimes]);
 
+  const movieTitleById = useMemo(() => {
+    const map: Record<string, string> = {};
+    movies.forEach((movie) => {
+      map[movie.id] = movie.title;
+    });
+    return map;
+  }, [movies]);
+
+  const showroomNameById = useMemo(() => {
+    const map: Record<string, string> = {};
+    showrooms.forEach((showroom) => {
+      map[showroom.id] = showroom.name;
+    });
+    return map;
+  }, [showrooms]);
+
   const closeUserModal = () => {
     setShowUserModal(false);
+    setAttemptedUserSubmit(false);
     setNewUser({
       id: "",
       name: "",
@@ -110,15 +181,23 @@ export default function AdminMoviesPage() {
 
   const closeMovieModal = () => {
     setShowMovieModal(false);
+    setAttemptedMovieSubmit(false);
     setNewMovie({
-      id: "",
       title: "",
+      description: "",
+      trailer: "",
+      poster: "",
       rating: "",
+      genreInput: "",
+      duration_minutes: "",
+      castInput: "",
+      currentlyPlaying: false,
     });
   };
 
   const closePromoModal = () => {
     setShowPromoModal(false);
+    setAttemptedPromoSubmit(false);
     setNewPromo({
       id: "",
       movieTitle: "",
@@ -128,17 +207,178 @@ export default function AdminMoviesPage() {
 
   const closeShowtimeModal = () => {
     setShowShowtimeModal(false);
+    setAttemptedShowtimeSubmit(false);
     setNewShowtime({
-      id: "",
-      movieTitle: "",
+      movie_id: "",
+      showroom_id: "",
       date: "",
-      time: "",
-      auditorium: "",
+      start_time: "",
     });
   };
 
+  const parseListInput = (value: string) =>
+    value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+  const getErrorMessage = async (response: Response, fallback: string) => {
+    try {
+      const data = await response.json();
+      if (typeof data?.detail === "string") return data.detail;
+      if (Array.isArray(data?.detail)) {
+        return data.detail.map((item: any) => item?.msg || "Invalid input").join(", ");
+      }
+      return fallback;
+    } catch {
+      return fallback;
+    }
+  };
+
+  const timeToMinutes = (time: string) => {
+    const [hours, minutes] = time.split(":").map(Number);
+    return hours * 60 + minutes;
+  };
+
+  const minutesToTimeString = (totalMinutes: number) => {
+    const normalizedMinutes = ((totalMinutes % (24 * 60)) + (24 * 60)) % (24 * 60);
+    const hours = Math.floor(normalizedMinutes / 60);
+    const minutes = normalizedMinutes % 60;
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+  };
+
+  const showtimesOverlap = (
+    startA: string,
+    endA: string,
+    startB: string,
+    endB: string
+  ) => {
+    const startAMins = timeToMinutes(startA);
+    const endAMins = timeToMinutes(endA);
+    const startBMins = timeToMinutes(startB);
+    const endBMins = timeToMinutes(endB);
+
+    return startAMins < endBMins && endAMins > startBMins;
+  };
+
+  const fetchMovies = async (): Promise<Movie[]> => {
+    const response = await fetch(`${API_BASE}/movies`);
+    if (!response.ok) {
+      throw new Error("Failed to load movies.");
+    }
+
+    const data = await response.json();
+    return Array.isArray(data) ? data : [];
+  };
+
+  const fetchShowrooms = async (): Promise<Showroom[]> => {
+    const response = await fetch(`${API_BASE}/showrooms`);
+    if (!response.ok) {
+      throw new Error("Failed to load showrooms.");
+    }
+
+    const data = await response.json();
+    return Array.isArray(data) ? data : [];
+  };
+
+  const fetchAllShowtimes = async (movieList: Movie[]): Promise<Showtime[]> => {
+    const results = await Promise.all(
+      movieList.map(async (movie) => {
+        try {
+          const response = await fetch(`${API_BASE}/movies/${movie.id}/showtimes`);
+          if (!response.ok) return [];
+
+          const data = await response.json();
+          if (!Array.isArray(data)) return [];
+
+          return data.map((showtime: Showtime) => ({
+            ...showtime,
+            movie_title: movie.title,
+          }));
+        } catch {
+          return [];
+        }
+      })
+    );
+
+    return results.flat();
+  };
+
+  const loadAdminData = async () => {
+    setLoading(true);
+
+    try {
+      const [movieData, showroomData] = await Promise.all([
+        fetchMovies(),
+        fetchShowrooms(),
+      ]);
+
+      setMovies(movieData);
+      setShowrooms(showroomData);
+
+      const showtimeData = await fetchAllShowtimes(movieData);
+      setShowtimes(showtimeData);
+
+      if (showroomData.length < 3) {
+        setErrorMessage(
+          "Warning: fewer than 3 showrooms were found in the database. Your rubric requires at least 3 showrooms."
+        );
+      }
+    } catch (error) {
+      console.error(error);
+      setErrorMessage("Failed to load admin data.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadAdminData();
+  }, []);
+
+  const userNameInvalid = attemptedUserSubmit && !newUser.name.trim();
+  const userEmailInvalid = attemptedUserSubmit && !newUser.email.trim();
+  const userRoleInvalid = attemptedUserSubmit && !newUser.role.trim();
+  const userStatusInvalid = attemptedUserSubmit && !newUser.status.trim();
+
+  const movieTitleInvalid = attemptedMovieSubmit && !newMovie.title.trim();
+  const movieDescriptionInvalid = attemptedMovieSubmit && !newMovie.description.trim();
+  const movieRatingInvalid = attemptedMovieSubmit && !newMovie.rating.trim();
+  const movieDurationInvalid = attemptedMovieSubmit && !newMovie.duration_minutes.trim();
+
+  const promoMovieTitleInvalid = attemptedPromoSubmit && !newPromo.movieTitle.trim();
+  const promoDiscountInvalid = attemptedPromoSubmit && !newPromo.discount.trim();
+
+  const showtimeMovieInvalid = attemptedShowtimeSubmit && !newShowtime.movie_id.trim();
+  const showtimeShowroomInvalid =
+    attemptedShowtimeSubmit && !newShowtime.showroom_id.trim();
+  const showtimeDateInvalid = attemptedShowtimeSubmit && !newShowtime.date.trim();
+  const showtimeStartTimeInvalid =
+    attemptedShowtimeSubmit && !newShowtime.start_time.trim();
+
+  const getFieldStyle = (isInvalid: boolean): React.CSSProperties => ({
+    ...(isInvalid ? styles.inputError : {}),
+  });
+
+  const getTextareaStyle = (isInvalid: boolean): React.CSSProperties => ({
+    ...(isInvalid ? styles.inputError : {}),
+  });
+
+  const renderLabel = (
+    label: string,
+    isRequired = false,
+    isInvalid = false
+  ) => (
+    <label style={styles.label}>
+      {label}
+      {isRequired ? <span style={styles.requiredAsterisk}> *</span> : null}
+      {isInvalid ? <span style={styles.requiredText}> Required</span> : null}
+    </label>
+  );
+
   const handleAddUser = () => {
     resetMessages();
+    setAttemptedUserSubmit(true);
 
     if (
       !newUser.name.trim() ||
@@ -164,28 +404,78 @@ export default function AdminMoviesPage() {
     closeUserModal();
   };
 
-  const handleAddMovie = () => {
+  const handleAddMovie = async () => {
     resetMessages();
+    setAttemptedMovieSubmit(true);
 
-    if (!newMovie.title.trim() || !newMovie.rating.trim()) {
-      setErrorMessage("Please complete all movie fields.");
+    if (
+      !newMovie.title.trim() ||
+      !newMovie.description.trim() ||
+      !newMovie.rating.trim() ||
+      !newMovie.duration_minutes.trim()
+    ) {
+      setErrorMessage("Please complete all required movie fields.");
       return;
     }
 
-    const movieToAdd: Movie = {
-      ...newMovie,
-      id: Date.now().toString(),
+    const duration = Number(newMovie.duration_minutes);
+
+    if (!Number.isInteger(duration) || duration <= 0) {
+      setErrorMessage("Duration must be a valid number of minutes.");
+      return;
+    }
+
+    if (!token) {
+      setErrorMessage("You must be logged in as an admin to add a movie.");
+      return;
+    }
+
+    const payload = {
       title: newMovie.title.trim(),
+      description: newMovie.description.trim(),
+      trailer: newMovie.trailer.trim() || null,
+      poster: newMovie.poster.trim() || null,
       rating: newMovie.rating.trim(),
+      genre: parseListInput(newMovie.genreInput),
+      duration_minutes: duration,
+      cast: parseListInput(newMovie.castInput),
+      currentlyPlaying: newMovie.currentlyPlaying,
     };
 
-    setMovies((prev) => [...prev, movieToAdd]);
-    setSuccessMessage("Movie added successfully.");
-    closeMovieModal();
+    try {
+      setSubmittingMovie(true);
+
+      const response = await fetch(`${API_BASE}/admin/movies`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const message = await getErrorMessage(response, "Failed to add movie.");
+        setErrorMessage(message);
+        return;
+      }
+
+      const createdMovie: Movie = await response.json();
+
+      setMovies((prev) => [...prev, createdMovie]);
+      setSuccessMessage("Movie added successfully.");
+      closeMovieModal();
+    } catch (error) {
+      console.error(error);
+      setErrorMessage("Failed to add movie.");
+    } finally {
+      setSubmittingMovie(false);
+    }
   };
 
   const handleAddPromotion = () => {
     resetMessages();
+    setAttemptedPromoSubmit(true);
 
     if (!newPromo.movieTitle.trim() || !newPromo.discount.trim()) {
       setErrorMessage("Please complete all promotion fields.");
@@ -204,31 +494,131 @@ export default function AdminMoviesPage() {
     closePromoModal();
   };
 
-  const handleAddShowtime = () => {
+  const handleAddShowtime = async () => {
     resetMessages();
+    setAttemptedShowtimeSubmit(true);
 
     if (
-      !newShowtime.movieTitle.trim() ||
+      !newShowtime.movie_id.trim() ||
+      !newShowtime.showroom_id.trim() ||
       !newShowtime.date.trim() ||
-      !newShowtime.time.trim() ||
-      !newShowtime.auditorium.trim()
+      !newShowtime.start_time.trim()
     ) {
       setErrorMessage("Please complete all showtime fields.");
       return;
     }
 
-    const showtimeToAdd: Showtime = {
-      ...newShowtime,
-      id: Date.now().toString(),
-      movieTitle: newShowtime.movieTitle.trim(),
-      date: newShowtime.date.trim(),
-      time: newShowtime.time.trim(),
-      auditorium: newShowtime.auditorium.trim(),
+    if (!token) {
+      setErrorMessage("You must be logged in as an admin to add a showtime.");
+      return;
+    }
+
+    const selectedMovie = movies.find((movie) => movie.id === newShowtime.movie_id);
+
+    if (!selectedMovie) {
+      setErrorMessage("Selected movie could not be found.");
+      return;
+    }
+
+    const proposedStart = newShowtime.start_time;
+    const proposedEnd = minutesToTimeString(
+      timeToMinutes(proposedStart) + selectedMovie.duration_minutes
+    );
+
+    const conflictingShowtime = showtimes.find((existingShowtime) => {
+      const sameShowroom = existingShowtime.showroom_id === newShowtime.showroom_id;
+      const sameDate = existingShowtime.date === newShowtime.date;
+
+      if (!sameShowroom || !sameDate) {
+        return false;
+      }
+
+      return showtimesOverlap(
+        proposedStart,
+        proposedEnd,
+        existingShowtime.start_time,
+        existingShowtime.end_time
+      );
+    });
+
+    if (conflictingShowtime) {
+      setErrorMessage(
+        `This showroom is already booked on ${newShowtime.date} from ${conflictingShowtime.start_time} to ${conflictingShowtime.end_time}. Please choose a different showroom or time.`
+      );
+      return;
+    }
+
+    const payload = {
+      movie_id: newShowtime.movie_id,
+      showroom_id: newShowtime.showroom_id,
+      date: newShowtime.date,
+      start_time: newShowtime.start_time,
     };
 
-    setShowtimes((prev) => [...prev, showtimeToAdd]);
-    setSuccessMessage("Showtime added successfully.");
-    closeShowtimeModal();
+    try {
+      setSubmittingShowtime(true);
+
+      const response = await fetch(`${API_BASE}/admin/showtimes`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const message = await getErrorMessage(response, "Failed to add showtime.");
+        setErrorMessage(message);
+        return;
+      }
+
+      const createdShowtime: Showtime = await response.json();
+
+      const enrichedShowtime: Showtime = {
+        ...createdShowtime,
+        movie_title: movieTitleById[createdShowtime.movie_id] || "Selected Movie",
+        showroom_name:
+          createdShowtime.showroom_name ||
+          showroomNameById[createdShowtime.showroom_id] ||
+          "Selected Showroom",
+      };
+
+      setShowtimes((prev) =>
+        [...prev, enrichedShowtime].sort((a, b) => {
+          const aValue = `${a.date} ${a.start_time}`;
+          const bValue = `${b.date} ${b.start_time}`;
+          return aValue.localeCompare(bValue);
+        })
+      );
+
+      setMovies((prev) =>
+        prev.map((movie) => {
+          if (movie.id !== newShowtime.movie_id) {
+            return movie;
+          }
+
+          const currentDates = Array.isArray(movie.datesPlaying) ? movie.datesPlaying : [];
+          const updatedDates = currentDates.includes(newShowtime.date)
+            ? currentDates
+            : [...currentDates, newShowtime.date].sort((a, b) => a.localeCompare(b));
+
+          return {
+            ...movie,
+            currentlyPlaying: true,
+            datesPlaying: updatedDates,
+          };
+        })
+      );
+
+      setSuccessMessage("Showtime added successfully.");
+      closeShowtimeModal();
+    } catch (error) {
+      console.error(error);
+      setErrorMessage("Failed to add showtime.");
+    } finally {
+      setSubmittingShowtime(false);
+    }
   };
 
   const handleDeleteUser = (id: string) => {
@@ -240,7 +630,8 @@ export default function AdminMoviesPage() {
   const handleDeleteMovie = (id: string) => {
     resetMessages();
     setMovies((prev) => prev.filter((movie) => movie.id !== id));
-    setSuccessMessage("Movie removed.");
+    setShowtimes((prev) => prev.filter((showtime) => showtime.movie_id !== id));
+    setSuccessMessage("Movie removed from the page.");
   };
 
   const handleDeletePromotion = (id: string) => {
@@ -252,7 +643,7 @@ export default function AdminMoviesPage() {
   const handleDeleteShowtime = (id: string) => {
     resetMessages();
     setShowtimes((prev) => prev.filter((showtime) => showtime.id !== id));
-    setSuccessMessage("Showtime removed.");
+    setSuccessMessage("Showtime removed from the page.");
   };
 
   return (
@@ -375,7 +766,9 @@ export default function AdminMoviesPage() {
               <div style={styles.sectionHeader}>
                 <div>
                   <h2 style={styles.sectionTitle}>Movies</h2>
-                  <p style={styles.sectionMeta}>{movieCountText}</p>
+                  <p style={styles.sectionMeta}>
+                    {loading ? "Loading..." : movieCountText}
+                  </p>
                 </div>
                 <button
                   onClick={() => {
@@ -390,7 +783,9 @@ export default function AdminMoviesPage() {
 
               {movies.length === 0 ? (
                 <div style={styles.emptyState}>
-                  No movies added yet. Click <strong>Add Movie</strong> to create one.
+                  {loading
+                    ? "Loading movies..."
+                    : "No movies added yet. Click Add Movie to create one."}
                 </div>
               ) : (
                 <div style={styles.itemsWrap}>
@@ -399,9 +794,21 @@ export default function AdminMoviesPage() {
                       <div style={styles.itemTopRow}>
                         <div>
                           <h3 style={styles.itemTitle}>{movie.title}</h3>
-                          <p style={styles.itemSubtext}>Rating: {movie.rating}</p>
+                          <p style={styles.itemSubtext}>Rating: {movie.rating || "N/A"}</p>
+                          <p style={styles.itemSubtext}>
+                            Duration: {movie.duration_minutes || 0} min
+                          </p>
+                          <p style={styles.itemSubtext}>
+                            Genres: {movie.genre.length ? movie.genre.join(", ") : "None"}
+                          </p>
+                          <p style={styles.itemSubtext}>
+                            Dates Playing:{" "}
+                            {movie.datesPlaying && movie.datesPlaying.length > 0
+                              ? movie.datesPlaying.join(", ")
+                              : "None"}
+                          </p>
                         </div>
-                        <span style={styles.badge}>{movie.rating}</span>
+                        <span style={styles.badge}>{movie.rating || "NR"}</span>
                       </div>
 
                       <div style={styles.itemActions}>
@@ -469,7 +876,9 @@ export default function AdminMoviesPage() {
               <div style={styles.sectionHeader}>
                 <div>
                   <h2 style={styles.sectionTitle}>Showtimes</h2>
-                  <p style={styles.sectionMeta}>{showtimeCountText}</p>
+                  <p style={styles.sectionMeta}>
+                    {loading ? "Loading..." : showtimeCountText}
+                  </p>
                 </div>
                 <button
                   onClick={() => {
@@ -484,7 +893,9 @@ export default function AdminMoviesPage() {
 
               {showtimes.length === 0 ? (
                 <div style={styles.emptyState}>
-                  No showtimes added yet. Click <strong>Add Showtime</strong> to create one.
+                  {loading
+                    ? "Loading showtimes..."
+                    : "No showtimes added yet. Click Add Showtime to create one."}
                 </div>
               ) : (
                 <div style={styles.itemsWrap}>
@@ -492,12 +903,20 @@ export default function AdminMoviesPage() {
                     <div key={showtime.id} style={styles.itemCard}>
                       <div style={styles.itemTopRow}>
                         <div>
-                          <h3 style={styles.itemTitle}>{showtime.movieTitle}</h3>
+                          <h3 style={styles.itemTitle}>
+                            {showtime.movie_title ||
+                              movieTitleById[showtime.movie_id] ||
+                              "Movie"}
+                          </h3>
                           <p style={styles.itemSubtext}>
-                            {showtime.date} at {showtime.time}
+                            {showtime.date} at {showtime.start_time}
                           </p>
+                          <p style={styles.itemSubtext}>Ends at {showtime.end_time}</p>
                           <p style={styles.itemSubtext}>
-                            Auditorium: {showtime.auditorium}
+                            Auditorium:{" "}
+                            {showtime.showroom_name ||
+                              showroomNameById[showtime.showroom_id] ||
+                              "Unknown"}
                           </p>
                         </div>
                       </div>
@@ -528,33 +947,33 @@ export default function AdminMoviesPage() {
             </div>
 
             <div style={styles.fieldGroup}>
-              <label style={styles.label}>Full Name</label>
+              {renderLabel("Full Name", true, userNameInvalid)}
               <input
                 type="text"
                 placeholder="Enter full name"
                 value={newUser.name}
                 onChange={(e) => setNewUser({ ...newUser, name: e.target.value })}
-                style={styles.input}
+                style={{ ...styles.input, ...getFieldStyle(userNameInvalid) }}
               />
             </div>
 
             <div style={styles.fieldGroup}>
-              <label style={styles.label}>Email</label>
+              {renderLabel("Email", true, userEmailInvalid)}
               <input
                 type="email"
                 placeholder="Enter email"
                 value={newUser.email}
                 onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
-                style={styles.input}
+                style={{ ...styles.input, ...getFieldStyle(userEmailInvalid) }}
               />
             </div>
 
             <div style={styles.fieldGroup}>
-              <label style={styles.label}>Role</label>
+              {renderLabel("Role", true, userRoleInvalid)}
               <select
                 value={newUser.role}
                 onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
-                style={styles.input}
+                style={{ ...styles.input, ...getFieldStyle(userRoleInvalid) }}
               >
                 <option value="">Select role</option>
                 <option value="Admin">Admin</option>
@@ -564,11 +983,11 @@ export default function AdminMoviesPage() {
             </div>
 
             <div style={styles.fieldGroup}>
-              <label style={styles.label}>Status</label>
+              {renderLabel("Status", true, userStatusInvalid)}
               <select
                 value={newUser.status}
                 onChange={(e) => setNewUser({ ...newUser, status: e.target.value })}
-                style={styles.input}
+                style={{ ...styles.input, ...getFieldStyle(userStatusInvalid) }}
               >
                 <option value="">Select status</option>
                 <option value="Active">Active</option>
@@ -590,29 +1009,48 @@ export default function AdminMoviesPage() {
 
       {showMovieModal && (
         <div style={styles.modalOverlay}>
-          <div style={styles.modal}>
+          <div
+            style={{
+              ...styles.modal,
+              maxWidth: "520px",
+              maxHeight: "calc(100vh - 120px)",
+              overflowY: "auto",
+            }}
+          >
             <div style={styles.modalHeader}>
               <h3 style={styles.modalTitle}>Add Movie</h3>
               <p style={styles.modalSubtitle}>Enter the movie details below.</p>
             </div>
 
             <div style={styles.fieldGroup}>
-              <label style={styles.label}>Movie Title</label>
+              {renderLabel("Movie Title", true, movieTitleInvalid)}
               <input
                 type="text"
                 placeholder="Enter movie title"
                 value={newMovie.title}
                 onChange={(e) => setNewMovie({ ...newMovie, title: e.target.value })}
-                style={styles.input}
+                style={{ ...styles.input, ...getFieldStyle(movieTitleInvalid) }}
               />
             </div>
 
             <div style={styles.fieldGroup}>
-              <label style={styles.label}>Age Rating</label>
+              {renderLabel("Description", true, movieDescriptionInvalid)}
+              <textarea
+                placeholder="Enter movie description"
+                value={newMovie.description}
+                onChange={(e) =>
+                  setNewMovie({ ...newMovie, description: e.target.value })
+                }
+                style={{ ...styles.textarea, ...getTextareaStyle(movieDescriptionInvalid) }}
+              />
+            </div>
+
+            <div style={styles.fieldGroup}>
+              {renderLabel("Age Rating", true, movieRatingInvalid)}
               <select
                 value={newMovie.rating}
                 onChange={(e) => setNewMovie({ ...newMovie, rating: e.target.value })}
-                style={styles.input}
+                style={{ ...styles.input, ...getFieldStyle(movieRatingInvalid) }}
               >
                 <option value="">Select age rating</option>
                 <option value="G">G</option>
@@ -623,12 +1061,95 @@ export default function AdminMoviesPage() {
               </select>
             </div>
 
+            <div style={styles.fieldGroup}>
+              {renderLabel("Genre")}
+              <input
+                type="text"
+                placeholder="Animation, Adventure, Comedy"
+                value={newMovie.genreInput}
+                onChange={(e) =>
+                  setNewMovie({ ...newMovie, genreInput: e.target.value })
+                }
+                style={styles.input}
+              />
+            </div>
+
+            <div style={styles.fieldGroup}>
+              {renderLabel("Duration (Minutes)", true, movieDurationInvalid)}
+              <input
+                type="number"
+                placeholder="e.g. 98"
+                value={newMovie.duration_minutes}
+                onChange={(e) =>
+                  setNewMovie({ ...newMovie, duration_minutes: e.target.value })
+                }
+                style={{ ...styles.input, ...getFieldStyle(movieDurationInvalid) }}
+                min={1}
+              />
+            </div>
+
+            <div style={styles.fieldGroup}>
+              {renderLabel("Cast")}
+              <input
+                type="text"
+                placeholder="Actor One, Actor Two"
+                value={newMovie.castInput}
+                onChange={(e) =>
+                  setNewMovie({ ...newMovie, castInput: e.target.value })
+                }
+                style={styles.input}
+              />
+            </div>
+
+            <div style={styles.fieldGroup}>
+              {renderLabel("Poster URL")}
+              <input
+                type="text"
+                placeholder="https://..."
+                value={newMovie.poster}
+                onChange={(e) => setNewMovie({ ...newMovie, poster: e.target.value })}
+                style={styles.input}
+              />
+            </div>
+
+            <div style={styles.fieldGroup}>
+              {renderLabel("Trailer URL")}
+              <input
+                type="text"
+                placeholder="https://..."
+                value={newMovie.trailer}
+                onChange={(e) => setNewMovie({ ...newMovie, trailer: e.target.value })}
+                style={styles.input}
+              />
+            </div>
+
+            <div style={styles.checkboxRow}>
+              <label style={styles.checkboxLabel}>
+                <input
+                  type="checkbox"
+                  checked={newMovie.currentlyPlaying}
+                  onChange={(e) =>
+                    setNewMovie({
+                      ...newMovie,
+                      currentlyPlaying: e.target.checked,
+                    })
+                  }
+                  style={styles.checkbox}
+                />
+                Currently Playing
+              </label>
+            </div>
+
             <div style={styles.modalBtns}>
               <button onClick={closeMovieModal} style={styles.modalSecondaryBtn}>
                 Cancel
               </button>
-              <button onClick={handleAddMovie} style={styles.modalPrimaryBtn}>
-                Save Movie
+              <button
+                onClick={handleAddMovie}
+                style={styles.modalPrimaryBtn}
+                disabled={submittingMovie}
+              >
+                {submittingMovie ? "Saving..." : "Save Movie"}
               </button>
             </div>
           </div>
@@ -644,7 +1165,7 @@ export default function AdminMoviesPage() {
             </div>
 
             <div style={styles.fieldGroup}>
-              <label style={styles.label}>Movie Title</label>
+              {renderLabel("Movie Title", true, promoMovieTitleInvalid)}
               <input
                 type="text"
                 placeholder="Enter movie title"
@@ -652,18 +1173,18 @@ export default function AdminMoviesPage() {
                 onChange={(e) =>
                   setNewPromo({ ...newPromo, movieTitle: e.target.value })
                 }
-                style={styles.input}
+                style={{ ...styles.input, ...getFieldStyle(promoMovieTitleInvalid) }}
               />
             </div>
 
             <div style={styles.fieldGroup}>
-              <label style={styles.label}>Discount %</label>
+              {renderLabel("Discount %", true, promoDiscountInvalid)}
               <input
                 type="number"
                 placeholder="e.g. 15"
                 value={newPromo.discount}
                 onChange={(e) => setNewPromo({ ...newPromo, discount: e.target.value })}
-                style={styles.input}
+                style={{ ...styles.input, ...getFieldStyle(promoDiscountInvalid) }}
               />
             </div>
 
@@ -688,52 +1209,62 @@ export default function AdminMoviesPage() {
             </div>
 
             <div style={styles.fieldGroup}>
-              <label style={styles.label}>Movie Title</label>
-              <input
-                type="text"
-                placeholder="Enter movie title"
-                value={newShowtime.movieTitle}
+              {renderLabel("Movie", true, showtimeMovieInvalid)}
+              <select
+                value={newShowtime.movie_id}
                 onChange={(e) =>
-                  setNewShowtime({ ...newShowtime, movieTitle: e.target.value })
+                  setNewShowtime({ ...newShowtime, movie_id: e.target.value })
                 }
-                style={styles.input}
-              />
+                style={{ ...styles.input, ...getFieldStyle(showtimeMovieInvalid) }}
+              >
+                <option value="">Select movie</option>
+                {movies.map((movie) => (
+                  <option key={movie.id} value={movie.id}>
+                    {movie.title}
+                  </option>
+                ))}
+              </select>
             </div>
 
             <div style={styles.fieldGroup}>
-              <label style={styles.label}>Date</label>
+              {renderLabel("Showroom", true, showtimeShowroomInvalid)}
+              <select
+                value={newShowtime.showroom_id}
+                onChange={(e) =>
+                  setNewShowtime({ ...newShowtime, showroom_id: e.target.value })
+                }
+                style={{ ...styles.input, ...getFieldStyle(showtimeShowroomInvalid) }}
+              >
+                <option value="">Select showroom</option>
+                {showrooms.map((showroom) => (
+                  <option key={showroom.id} value={showroom.id}>
+                    {showroom.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div style={styles.fieldGroup}>
+              {renderLabel("Date", true, showtimeDateInvalid)}
               <input
                 type="date"
                 value={newShowtime.date}
                 onChange={(e) =>
                   setNewShowtime({ ...newShowtime, date: e.target.value })
                 }
-                style={styles.input}
+                style={{ ...styles.input, ...getFieldStyle(showtimeDateInvalid) }}
               />
             </div>
 
             <div style={styles.fieldGroup}>
-              <label style={styles.label}>Time</label>
+              {renderLabel("Start Time", true, showtimeStartTimeInvalid)}
               <input
                 type="time"
-                value={newShowtime.time}
+                value={newShowtime.start_time}
                 onChange={(e) =>
-                  setNewShowtime({ ...newShowtime, time: e.target.value })
+                  setNewShowtime({ ...newShowtime, start_time: e.target.value })
                 }
-                style={styles.input}
-              />
-            </div>
-
-            <div style={styles.fieldGroup}>
-              <label style={styles.label}>Auditorium</label>
-              <input
-                type="text"
-                placeholder="Enter auditorium"
-                value={newShowtime.auditorium}
-                onChange={(e) =>
-                  setNewShowtime({ ...newShowtime, auditorium: e.target.value })
-                }
-                style={styles.input}
+                style={{ ...styles.input, ...getFieldStyle(showtimeStartTimeInvalid) }}
               />
             </div>
 
@@ -741,8 +1272,12 @@ export default function AdminMoviesPage() {
               <button onClick={closeShowtimeModal} style={styles.modalSecondaryBtn}>
                 Cancel
               </button>
-              <button onClick={handleAddShowtime} style={styles.modalPrimaryBtn}>
-                Save Showtime
+              <button
+                onClick={handleAddShowtime}
+                style={styles.modalPrimaryBtn}
+                disabled={submittingShowtime}
+              >
+                {submittingShowtime ? "Saving..." : "Save Showtime"}
               </button>
             </div>
           </div>
@@ -1019,14 +1554,17 @@ const styles: Record<string, React.CSSProperties> = {
     backgroundColor: "rgba(0,0,0,0.65)",
     display: "flex",
     justifyContent: "center",
-    alignItems: "center",
-    padding: "20px",
+    alignItems: "flex-start",
+    padding: "90px 20px 24px 20px",
     zIndex: 20,
+    overflowY: "auto",
   },
 
   modal: {
     width: "100%",
     maxWidth: "420px",
+    maxHeight: "calc(100vh - 120px)",
+    overflowY: "auto",
     background: "rgba(10,10,14,0.94)",
     padding: "24px",
     borderRadius: "18px",
@@ -1071,6 +1609,17 @@ const styles: Record<string, React.CSSProperties> = {
     letterSpacing: 0.4,
   },
 
+  requiredText: {
+    color: "#ff8f8f",
+    fontWeight: 700,
+    fontSize: "12px",
+  },
+
+  requiredAsterisk: {
+    color: "#ff4d4f",
+    fontWeight: 900,
+  },
+
   input: {
     padding: "12px",
     borderRadius: "10px",
@@ -1079,6 +1628,45 @@ const styles: Record<string, React.CSSProperties> = {
     color: "white",
     outline: "none",
     fontSize: "14px",
+  },
+
+  textarea: {
+    padding: "12px",
+    borderRadius: "10px",
+    border: "1px solid rgba(255,255,255,0.18)",
+    background: "rgba(255,255,255,0.08)",
+    color: "white",
+    outline: "none",
+    fontSize: "14px",
+    minHeight: "90px",
+    resize: "vertical",
+    fontFamily: "inherit",
+  },
+
+  inputError: {
+    border: "1px solid #ff4d4f",
+    boxShadow: "0 0 0 1px rgba(255,77,79,0.18)",
+  },
+
+  checkboxRow: {
+    display: "flex",
+    alignItems: "center",
+    marginTop: "2px",
+  },
+
+  checkboxLabel: {
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    fontSize: "14px",
+    color: "white",
+    cursor: "pointer",
+  },
+
+  checkbox: {
+    width: "16px",
+    height: "16px",
+    cursor: "pointer",
   },
 
   modalBtns: {
