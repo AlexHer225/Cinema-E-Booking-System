@@ -16,10 +16,27 @@ type Movie = {
   genre?: string[];
 };
 
+type Showtime = {
+  _id?: string;
+  id?: string;
+  movie_id: string;
+  showroom_id?: string;
+  showroom_name?: string;
+  date: string;
+  start_time: string;
+  end_time?: string;
+  movie_title?: string;
+};
+
 type ApiState =
   | { status: "loading" }
   | { status: "error"; message: string }
   | { status: "success"; movie: Movie };
+
+type ShowtimesState =
+  | { status: "loading"; showtimes: Showtime[] }
+  | { status: "error"; message: string; showtimes: Showtime[] }
+  | { status: "success"; showtimes: Showtime[] };
 
 function toYouTubeEmbed(url: string): string {
   try {
@@ -38,26 +55,56 @@ function toYouTubeEmbed(url: string): string {
   return url;
 }
 
+function formatTimeToDisplay(time24: string): string {
+  const [hourStr, minuteStr] = time24.split(":");
+  const hour = Number(hourStr);
+  const minute = Number(minuteStr);
+
+  if (
+    Number.isNaN(hour) ||
+    Number.isNaN(minute) ||
+    hour < 0 ||
+    hour > 23 ||
+    minute < 0 ||
+    minute > 59
+  ) {
+    return time24;
+  }
+
+  const period = hour >= 12 ? "PM" : "AM";
+  const hour12 = hour % 12 === 0 ? 12 : hour % 12;
+  return `${hour12}:${minuteStr.padStart(2, "0")} ${period}`;
+}
+
+function formatDateToDisplay(dateStr: string): string {
+  const parsed = new Date(`${dateStr}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) return dateStr;
+
+  return parsed.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
 export default function MovieDetail() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const [state, setState] = useState<ApiState>({ status: "loading" });
+  const [showtimesState, setShowtimesState] = useState<ShowtimesState>({
+    status: "loading",
+    showtimes: [],
+  });
   const [isFavorite, setIsFavorite] = useState(false);
   const [favoriteLoading, setFavoriteLoading] = useState(false);
 
-  const showtimesByMovieId: Record<string, string[]> = useMemo(
-    () => ({
-      "1": ["2:00 PM", "5:00 PM", "8:00 PM"],
-      "2": ["1:30 PM", "4:30 PM", "7:30 PM", "10:15 PM"],
-      "3": ["12:15 PM", "3:15 PM", "6:15 PM", "9:15 PM"],
-    }),
-    []
-  );
-
-  const showtimes = useMemo(() => {
-    if (!id) return ["2:00 PM", "5:00 PM", "8:00 PM"];
-    return showtimesByMovieId[id] ?? ["2:00 PM", "5:00 PM", "8:00 PM"];
-  }, [id, showtimesByMovieId]);
+  const sortedShowtimes = useMemo(() => {
+    return [...showtimesState.showtimes].sort((a, b) => {
+      const aValue = `${a.date} ${a.start_time}`;
+      const bValue = `${b.date} ${b.start_time}`;
+      return aValue.localeCompare(bValue);
+    });
+  }, [showtimesState.showtimes]);
 
   useEffect(() => {
     if (!id) {
@@ -83,6 +130,58 @@ export default function MovieDetail() {
     }
 
     load();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
+  useEffect(() => {
+    if (!id) {
+      setShowtimesState({
+        status: "error",
+        message: "Missing movie id in URL.",
+        showtimes: [],
+      });
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadShowtimes() {
+      setShowtimesState({
+        status: "loading",
+        showtimes: [],
+      });
+
+      try {
+        const res = await fetch(`${API_BASE}/movies/${id}/showtimes`);
+        if (!res.ok) {
+          throw new Error(`Failed to load showtimes (${res.status})`);
+        }
+
+        const data = await res.json();
+        const showtimes = Array.isArray(data) ? data : [];
+
+        if (!cancelled) {
+          setShowtimesState({
+            status: "success",
+            showtimes,
+          });
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Unknown error";
+        if (!cancelled) {
+          setShowtimesState({
+            status: "error",
+            message: msg,
+            showtimes: [],
+          });
+        }
+      }
+    }
+
+    loadShowtimes();
 
     return () => {
       cancelled = true;
@@ -240,23 +339,40 @@ export default function MovieDetail() {
 
             <div style={styles.section}>
               <h3 style={styles.sectionTitle}>Showtimes</h3>
-              <div style={styles.timesRow}>
-                {showtimes.map((t) => (
-                  <button
-                    key={t}
-                    style={styles.timeBtn}
-                    onClick={() =>
-                      navigate(
-                        `/booking/${encodeURIComponent(
-                          movie.title
-                        )}?time=${encodeURIComponent(t)}`
-                      )
-                    }
-                  >
-                    {t}
-                  </button>
-                ))}
-              </div>
+
+              {showtimesState.status === "loading" ? (
+                <p style={styles.sectionHint}>Loading showtimes...</p>
+              ) : showtimesState.status === "error" ? (
+                <p style={styles.sectionHint}>{showtimesState.message}</p>
+              ) : sortedShowtimes.length === 0 ? (
+                <p style={styles.sectionHint}>No showtimes available.</p>
+              ) : (
+                <div style={styles.showtimeList}>
+                  {sortedShowtimes.map((showtime) => {
+                    const buttonLabel = `${formatDateToDisplay(
+                      showtime.date
+                    )} • ${formatTimeToDisplay(showtime.start_time)}`;
+
+                    return (
+                      <button
+                        key={`${showtime.id ?? showtime._id ?? ""}-${showtime.date}-${showtime.start_time}`}
+                        style={styles.timeBtn}
+                        onClick={() =>
+                          navigate(
+                            `/booking/${encodeURIComponent(
+                              movie.title
+                            )}?time=${encodeURIComponent(
+                              showtime.start_time
+                            )}&date=${encodeURIComponent(showtime.date)}`
+                          )
+                        }
+                      >
+                        {buttonLabel}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             <div style={styles.section}>
@@ -381,7 +497,7 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 16,
     letterSpacing: 0.4,
   },
-  timesRow: {
+  showtimeList: {
     display: "flex",
     gap: 10,
     flexWrap: "wrap",
