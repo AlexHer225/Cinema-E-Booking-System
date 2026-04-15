@@ -1,12 +1,22 @@
 import { useParams, useSearchParams } from "react-router-dom";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { CSSProperties } from "react";
 
+interface Seat {
+  seat: string;
+  status: "available" | "booked";
+}
+
+const API_BASE = "http://127.0.0.1:8000";
+
 function BookingPage() {
+ 
   const bgUrl = "/images/backgroundImage.jpg";
   const { title } = useParams();
   const [searchParams] = useSearchParams();
+
   const time = searchParams.get("time");
+  const showtimeId = searchParams.get("showtime_id");
 
   const PRICES = {
     adult: 12.99,
@@ -17,86 +27,210 @@ function BookingPage() {
   const [adultQty, setAdultQty] = useState(0);
   const [childQty, setChildQty] = useState(0);
   const [seniorQty, setSeniorQty] = useState(0);
+
   const [selectedSeats, setSelectedSeats] = useState<Set<string>>(new Set());
+  const [seatLayout, setSeatLayout] = useState<Seat[][]>([]);
+  const [loadingSeats, setLoadingSeats] = useState(true);
+  const [error, setError] = useState("");
+
+  const totalTickets = adultQty + childQty + seniorQty;
 
   const totalPrice =
     adultQty * PRICES.adult +
     childQty * PRICES.child +
     seniorQty * PRICES.senior;
 
-  const toggleSeat = (seatId: string) => {
+  // 🔁 Fetch seats
+  const fetchSeats = async () => {
+    
+    if (!showtimeId) {
+      setError("Missing showtime ID");
+      
+      setLoadingSeats(false);
+      return;
+    }
+
+    try {
+      setLoadingSeats(true);
+      setError("");
+
+      const res = await fetch(
+        `${API_BASE}/showtimes/${showtimeId}/seats`
+      );
+
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text);
+      }
+
+      const data = await res.json();
+
+      console.log("Seat API response:", data); // 🔥 DEBUG
+
+      const safeLayout: Seat[][] = Array.isArray(data.seat_layout)
+        ? data.seat_layout.map((row: any[]) =>
+            row.map((seatItem: any) => {
+              // 🔥 handle BOTH formats
+              if (typeof seatItem === "string") {
+                return {
+                  seat: seatItem,
+                  status: "available", // default
+                };
+              }
+
+              return {
+                seat: seatItem?.seat ?? "",
+                status: seatItem?.status ?? "available",
+              };
+            })
+          )
+        : [];
+
+      setSeatLayout(safeLayout);
+    } catch (err) {
+      console.error("Seat fetch error:", err);
+      setError("Failed to load seats.");
+    } finally {
+      setLoadingSeats(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchSeats();
+  }, [showtimeId]);
+
+  // 🎟️ Toggle seat
+  const toggleSeat = (seatId: string, isBooked: boolean) => {
+    if (!seatId || isBooked) return;
+
     setSelectedSeats((prev) => {
       const updated = new Set(prev);
+
       if (updated.has(seatId)) {
         updated.delete(seatId);
       } else {
+        if (totalTickets === 0) {
+          alert("Select tickets first.");
+          return prev;
+        }
+
+        if (updated.size >= totalTickets) {
+          alert("Too many seats selected.");
+          return prev;
+        }
+
         updated.add(seatId);
       }
+
       return updated;
     });
   };
 
+  // 🎯 Reserve seats
+  const handleReserve = async () => {
+    if (!showtimeId || totalTickets === 0) return;
+
+    if (selectedSeats.size !== totalTickets) {
+      alert("Seats must match tickets.");
+      return;
+    }
+
+    let sessionToken = localStorage.getItem("session_token");
+    if (!sessionToken) {
+      sessionToken = crypto.randomUUID();
+      localStorage.setItem("session_token", sessionToken);
+    }
+
+    const ticketTypes = [
+      ...Array(adultQty).fill("adult"),
+      ...Array(childQty).fill("child"),
+      ...Array(seniorQty).fill("senior"),
+    ];
+
+    const payload = {
+      showtime_id: showtimeId,
+      tickets: Array.from(selectedSeats).map((seat, i) => ({
+        seat,
+        type: ticketTypes[i],
+      })),
+      session_token: sessionToken,
+    };
+
+    try {
+      const res = await fetch(`${API_BASE}/bookings/reserve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.status === 409) {
+        const err = await res.json();
+        alert(err.detail);
+        fetchSeats();
+        return;
+      }
+
+      const data = await res.json();
+      console.log("Booking:", data);
+
+      localStorage.setItem("booking_id", data.id);
+
+      alert("Seats reserved!");
+      setSelectedSeats(new Set());
+      fetchSeats();
+    } catch (err) {
+      console.error("Reserve error:", err);
+    }
+  };
+
+  if (loadingSeats) return <div style={styles.center}>Loading seats...</div>;
+  if (error) return <div style={styles.center}>{error}</div>;
+  console.log("showtimeId:", showtimeId);
+console.log("loadingSeats:", loadingSeats);
+console.log("error:", error);
+console.log("seatLayout:", seatLayout);
+
   return (
     <div style={styles.page}>
-      {/* Background image layer */}
       <div style={{ ...styles.bg, backgroundImage: `url(${bgUrl})` }} />
-
-      {/* Dark overlay + scrollable content */}
       <div style={styles.overlay}>
         <div style={styles.container}>
-          <h1 style={styles.header}>
-            <u>Checkout</u>
-          </h1>
+          <h1>Checkout</h1>
 
           <h2>{title}</h2>
-          <h3>
-            <u>Selected Showtime:</u> {time}
-          </h3>
+          <p>{time}</p>
 
+          {/* Tickets */}
           <div style={styles.ticketSection}>
-            <TicketRow
-              label="Adult"
-              price={PRICES.adult}
-              value={adultQty}
-              onChange={setAdultQty}
-            />
-
-            <TicketRow
-              label="Child"
-              price={PRICES.child}
-              value={childQty}
-              onChange={setChildQty}
-            />
-
-            <TicketRow
-              label="Senior"
-              price={PRICES.senior}
-              value={seniorQty}
-              onChange={setSeniorQty}
-            />
+            <TicketRow label="Adult" price={PRICES.adult} value={adultQty} onChange={setAdultQty} />
+            <TicketRow label="Child" price={PRICES.child} value={childQty} onChange={setChildQty} />
+            <TicketRow label="Senior" price={PRICES.senior} value={seniorQty} onChange={setSeniorQty} />
           </div>
 
-          <h2 style={styles.total}>
-            <u>Total: ${totalPrice.toFixed(2)}</u>
-          </h2>
+          <h2>Total: ${totalPrice.toFixed(2)}</h2>
 
-          <h2 style={{ marginTop: "50px" }}>Select Seats:</h2>
-
+          {/* Seats */}
           <div style={styles.gridWrapper}>
-            {Array.from({ length: 5 }).map((_, row) => (
-              <div key={row} style={styles.row}>
-                {Array.from({ length: 10 }).map((_, col) => {
-                  const seatId = `${row + 1}-${col + 1}`;
-                  const isSelected = selectedSeats.has(seatId);
+            {seatLayout.map((row, i) => (
+              <div key={i} style={styles.row}>
+                {row.map((seatObj, j) => {
+                  const isBooked = seatObj.status === "booked";
+                  const isSelected = selectedSeats.has(seatObj.seat);
 
                   return (
                     <div
-                      key={seatId}
-                      onClick={() => toggleSeat(seatId)}
+                      key={seatObj.seat}
+                      onClick={() => toggleSeat(seatObj.seat, isBooked)}
                       style={{
                         ...styles.seat,
-                        backgroundColor: isSelected ? "#691A0A" : "#8B0000",
+                        backgroundColor: isBooked
+                          ? "#555"
+                          : isSelected
+                          ? "#2ecc71"
+                          : "#e74c3c",
+                        cursor: isBooked ? "not-allowed" : "pointer",
                       }}
+                      title={seatObj.seat}
                     />
                   );
                 })}
@@ -104,36 +238,26 @@ function BookingPage() {
             ))}
           </div>
 
-          <button style={styles.confirmBtn}>Confirm Order</button>
+          <button
+            style={styles.confirmBtn}
+            onClick={handleReserve}
+            disabled={selectedSeats.size !== totalTickets}
+          >
+            Confirm Booking
+          </button>
         </div>
       </div>
     </div>
   );
 }
 
-interface TicketRowProps {
-  label: string;
-  price: number;
-  value: number;
-  onChange: (value: number) => void;
-}
-
-function TicketRow({ label, price, value, onChange }: TicketRowProps) {
+function TicketRow({ label, price, value, onChange }: any) {
   return (
     <div style={styles.rowTicket}>
-      <span>
-        {label} (${price})
-      </span>
-
-      <select
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        style={styles.select}
-      >
-        {[0, 1, 2, 3, 4, 5].map((num) => (
-          <option key={num} value={num}>
-            {num}
-          </option>
+      <span>{label} (${price})</span>
+      <select value={value} onChange={(e) => onChange(Number(e.target.value))}>
+        {[0, 1, 2, 3, 4, 5].map((n) => (
+          <option key={n}>{n}</option>
         ))}
       </select>
     </div>
@@ -141,114 +265,29 @@ function TicketRow({ label, price, value, onChange }: TicketRowProps) {
 }
 
 const styles: Record<string, CSSProperties> = {
-  // fixes “white border” by covering the entire viewport regardless of body margin
-  page: {
-    position: "fixed",
-    inset: 0,
-    overflow: "hidden",
-    backgroundColor: "#0a0a0c",
-  },
-
-  // background image layer
+  page: { minHeight: "100vh", background: "#0a0a0c" },
   bg: {
-    position: "absolute",
-    inset: 0,
-    backgroundSize: "cover",
-    backgroundPosition: "center",
-    backgroundRepeat: "no-repeat",
-  },
+  position: "fixed",
+  inset: 0,
+  backgroundSize: "cover",
+  zIndex: 0, 
+},
 
-  // dark overlay + scroll container (so content can scroll)
-  overlay: {
-    position: "absolute",
-    inset: 0,
-    backgroundColor: "rgba(0,0,0,0.75)",
-    paddingTop: 90, // accounts for your fixed Navbar
-    paddingBottom: 40,
-    overflowY: "auto",
-    overflowX: "hidden",
-  },
-
-  container: {
-    maxWidth: "1100px",
-    margin: "0 auto",
-    color: "#F2F0EF",
-    padding: "0 20px",
-  },
-
-  header: {
-    textAlign: "center",
-  },
-
-  ticketSection: {
-    marginTop: "30px",
-    display: "flex",
-    flexDirection: "column",
-    gap: "20px",
-  },
-
-  rowTicket: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    fontSize: "18px",
-  },
-
-  select: {
-    padding: "5px 10px",
-    fontSize: "16px",
-    borderRadius: "6px",
-  },
-
-  total: {
-    marginTop: "40px",
-    fontSize: "24px",
-  },
-
-  gridWrapper: {
-    marginTop: "20px",
-    display: "flex",
-    flexDirection: "column",
-    gap: "10px",
-    alignItems: "center",
-    backgroundColor: "#813e3e",
-    borderRadius: "12px",
-    justifyContent: "center",
-    width: "600px",
-    minHeight: "300px",
-    marginLeft: "auto",
-    marginRight: "auto",
-    padding: "16px 12px",
-  },
-
-  row: {
-    display: "flex",
-    gap: "10px",
-    justifyContent: "center",
-  },
-
-  seat: {
-    width: "40px",
-    height: "40px",
-    borderRadius: "6px",
-    cursor: "pointer",
-    border: "1px solid #999",
-    transition: "0.2s",
-    boxShadow: "0 2px 4px rgba(0, 0, 0, 0.5)",
-  },
-
-  confirmBtn: {
-    marginTop: "30px",
-    width: "100%",
-    padding: "12px 14px",
-    borderRadius: "12px",
-    border: "1px solid rgba(255,255,255,0.18)",
-    background: "rgba(255,255,255,0.10)",
-    color: "white",
-    cursor: "pointer",
-    fontWeight: 800,
-    fontSize: "16px",
-  },
+overlay: {
+  position: "relative",
+  zIndex: 1, 
+  minHeight: "100vh",
+  background: "rgba(0,0,0,0.8)",
+  padding: 40,
+},
+  container: { maxWidth: 900, margin: "0 auto", color: "white" },
+  ticketSection: { marginTop: 20 },
+  rowTicket: { display: "flex", justifyContent: "space-between", marginBottom: 10 },
+  gridWrapper: { marginTop: 30, display: "flex", flexDirection: "column", alignItems: "center", gap: 8 },
+  row: { display: "flex", gap: 8 },
+  seat: { width: 35, height: 35, borderRadius: 6 },
+  confirmBtn: { marginTop: 20, width: "100%", padding: 12, background: "#e74c3c", color: "white", border: "none" },
+  center: { height: "100vh", display: "flex", justifyContent: "center", alignItems: "center", color: "white" },
 };
 
 export default BookingPage;

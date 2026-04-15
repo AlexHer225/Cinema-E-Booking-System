@@ -357,16 +357,23 @@ export default function MovieDetail() {
                       <button
                         key={`${showtime.id ?? showtime._id ?? ""}-${showtime.date}-${showtime.start_time}`}
                         style={styles.timeBtn}
-                        onClick={() =>
+                        onClick={() => {
+                          const showtimeId = showtime.id ?? showtime._id;
+
+                          if (!showtimeId) {
+                            console.error("Missing showtime ID:", showtime);
+                            alert("Invalid showtime data.");
+                            return;
+                          }
+
                           navigate(
-                            `/booking/${encodeURIComponent(
-                              movie.title
-                            )}?time=${encodeURIComponent(
-                              showtime.start_time
-                            )}&date=${encodeURIComponent(showtime.date)}`
-                          )
-                        }
-                      >
+                            `/booking/${encodeURIComponent(movie.title)}?` +
+                              `time=${encodeURIComponent(showtime.start_time)}` +
+                              `&date=${encodeURIComponent(showtime.date)}` +
+                              `&showtime_id=${encodeURIComponent(showtimeId)}`
+                          );
+                        }}
+                                            >
                         {buttonLabel}
                       </button>
                     );
@@ -530,4 +537,4 @@ const styles: Record<string, React.CSSProperties> = {
     height: "100%",
     border: 0,
   },
-};
+}; 
