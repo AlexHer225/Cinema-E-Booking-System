@@ -50,7 +50,19 @@ function BookingPage() {
     childQty * PRICES.child +
     seniorQty * PRICES.senior;
 
-  // 🔁 Fetch seats
+  const savePendingBooking = (data: any) => {
+  sessionStorage.setItem("pending_booking", JSON.stringify(data));
+};
+
+const getPendingBooking = () => {
+  try {
+    const data = sessionStorage.getItem("pending_booking");
+    return data ? JSON.parse(data) : null;
+  } catch {
+    return null;
+  }
+};
+
   const fetchSeats = async () => {
     
     if (!showtimeId) {
@@ -274,6 +286,8 @@ console.log("seatLayout:", seatLayout);
  onClick={() => {
   const token = localStorage.getItem("access_token");
 
+  if (selectedSeats.size !== totalTickets) return;
+
   const bookingState = {
     movieTitle: title || "Unknown Movie",
     showtimeId,
@@ -291,19 +305,20 @@ console.log("seatLayout:", seatLayout);
     totalPrice,
   };
 
-  // 🚨 must match tickets
-  if (selectedSeats.size !== totalTickets) return;
-
-  // ✅ NOT logged in → save + redirect
+  // ❌ NOT logged in → SAVE + go login
   if (!token) {
-    sessionStorage.setItem("pending_booking", JSON.stringify(bookingState));
+    savePendingBooking(bookingState);
 
-    navigate("/login");
+    navigate("/login", {
+      replace: true,
+      state: { from: "/checkout" }
+    });
+
     return;
   }
 
-  // ✅ logged in → continue
-  navigate("/checkout", { state: bookingState });
+  // ✅ logged in → go checkout
+  navigate("/confirmation", { state: bookingState });
 }}
   disabled={selectedSeats.size !== totalTickets}
 >
