@@ -235,6 +235,32 @@ export default function AdminMoviesPage() {
     }
   };
 
+  const timeToMinutes = (time: string) => {
+    const [hours, minutes] = time.split(":").map(Number);
+    return hours * 60 + minutes;
+  };
+
+  const minutesToTimeString = (totalMinutes: number) => {
+    const normalizedMinutes = ((totalMinutes % (24 * 60)) + (24 * 60)) % (24 * 60);
+    const hours = Math.floor(normalizedMinutes / 60);
+    const minutes = normalizedMinutes % 60;
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+  };
+
+  const showtimesOverlap = (
+    startA: string,
+    endA: string,
+    startB: string,
+    endB: string
+  ) => {
+    const startAMins = timeToMinutes(startA);
+    const endAMins = timeToMinutes(endA);
+    const startBMins = timeToMinutes(startB);
+    const endBMins = timeToMinutes(endB);
+
+    return startAMins < endBMins && endAMins > startBMins;
+  };
+
   const fetchMovies = async (): Promise<Movie[]> => {
     const response = await fetch(`${API_BASE}/movies`);
     if (!response.ok) {
@@ -484,6 +510,41 @@ export default function AdminMoviesPage() {
 
     if (!token) {
       setErrorMessage("You must be logged in as an admin to add a showtime.");
+      return;
+    }
+
+    const selectedMovie = movies.find((movie) => movie.id === newShowtime.movie_id);
+
+    if (!selectedMovie) {
+      setErrorMessage("Selected movie could not be found.");
+      return;
+    }
+
+    const proposedStart = newShowtime.start_time;
+    const proposedEnd = minutesToTimeString(
+      timeToMinutes(proposedStart) + selectedMovie.duration_minutes
+    );
+
+    const conflictingShowtime = showtimes.find((existingShowtime) => {
+      const sameShowroom = existingShowtime.showroom_id === newShowtime.showroom_id;
+      const sameDate = existingShowtime.date === newShowtime.date;
+
+      if (!sameShowroom || !sameDate) {
+        return false;
+      }
+
+      return showtimesOverlap(
+        proposedStart,
+        proposedEnd,
+        existingShowtime.start_time,
+        existingShowtime.end_time
+      );
+    });
+
+    if (conflictingShowtime) {
+      setErrorMessage(
+        `This showroom is already booked on ${newShowtime.date} from ${conflictingShowtime.start_time} to ${conflictingShowtime.end_time}. Please choose a different showroom or time.`
+      );
       return;
     }
 
