@@ -1,4 +1,4 @@
-import { useParams, useSearchParams } from "react-router-dom";
+import { useParams, useSearchParams, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import type { CSSProperties } from "react";
 
@@ -10,6 +10,7 @@ interface Seat {
 const API_BASE = "http://127.0.0.1:8000";
 
 function BookingPage() {
+  const navigate = useNavigate();
  
   const bgUrl = "/images/backgroundImage.jpg";
   const { title } = useParams();
@@ -127,6 +128,26 @@ function BookingPage() {
   };
 
   // 🎯 Reserve seats
+
+  const bookingState = {
+  movieTitle: title || "Unknown Movie",
+  showtimeId,
+  showtime: time,
+  selectedSeats: Array.from(selectedSeats),
+
+  adultQty,
+  childQty,
+  seniorQty,
+
+  pricePerTicket: {
+    adult: PRICES.adult,
+    child: PRICES.child,
+    senior: PRICES.senior,
+  },
+
+  totalTickets,
+  totalPrice,
+};
   const handleReserve = async () => {
     if (!showtimeId || totalTickets === 0) return;
 
@@ -176,6 +197,7 @@ function BookingPage() {
       localStorage.setItem("booking_id", data.id);
 
       alert("Seats reserved!");
+      navigate("/");
       setSelectedSeats(new Set());
       fetchSeats();
     } catch (err) {
@@ -239,12 +261,16 @@ console.log("seatLayout:", seatLayout);
           </div>
 
           <button
-            style={styles.confirmBtn}
-            onClick={handleReserve}
-            disabled={selectedSeats.size !== totalTickets}
-          >
-            Confirm Booking
-          </button>
+  style={styles.confirmBtn}
+  onClick={() => {
+        navigate("/confirmation", {
+          state: bookingState,
+        });
+  }}
+  disabled={selectedSeats.size !== totalTickets}
+>
+  Confirm Booking
+</button>
         </div>
       </div>
     </div>
