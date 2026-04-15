@@ -11,6 +11,7 @@ import EditProfilePage from "./Pages/EditProfile";
 import ResetPassword from "./Pages/ResetPassword";
 import AdminPortalPage from "./Pages/AdminPortal";
 import FavoritesPage from "./Pages/FavoritePage";
+import ConfirmationPage from "./Pages/ConfirmationPage";
 
 function App() {
   return (
@@ -40,6 +41,7 @@ function App() {
         />
 
         <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="/confirmation" element={<ConfirmationPage />} />
       </Routes>
     </div>
   );
