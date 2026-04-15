@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 const API_BASE =
@@ -10,9 +10,38 @@ export default function ConfirmationPage() {
   const { state } = useLocation() as any;
 
   const [loading, setLoading] = useState(false);
-  const [success, setSuccess] = useState(false);
-  const [error, setError] = useState("");
+  const [email, setEmail] = useState("");
 
+  // ---------------------------
+  // Fetch email from profile
+  // ---------------------------
+  useEffect(() => {
+    const loadEmail = async () => {
+      try {
+        const token = localStorage.getItem("access_token");
+        if (!token) return;
+
+        const res = await fetch(`${API_BASE}/me/profile`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!res.ok) return;
+
+        const data = await res.json();
+        setEmail(data.email || data.email_address || "");
+      } catch (err) {
+        console.error("Email fetch failed", err);
+      }
+    };
+
+    loadEmail();
+  }, []);
+
+  // ---------------------------
+  // Guard
+  // ---------------------------
   if (!state) {
     return (
       <div style={styles.page}>
@@ -30,70 +59,38 @@ export default function ConfirmationPage() {
     movieTitle,
     showtime,
     showtimeId,
-    selectedSeats,
-    adultQty,
-    childQty,
-    seniorQty,
-    totalTickets,
-    totalPrice,
+    selectedSeats = [],
+    adultQty = 0,
+    childQty = 0,
+    seniorQty = 0,
+    totalTickets = 0,
+    totalPrice = 0,
   } = state;
 
+  // ---------------------------
+  // Go directly to payment page (NO POPUP)
+  // ---------------------------
   const handleConfirm = async () => {
-    if (!showtimeId || totalTickets === 0) return;
-
-    if (selectedSeats.length !== totalTickets) {
-      setError("Seats must match tickets.");
-      return;
-    }
-
-    let sessionToken = localStorage.getItem("session_token");
-    if (!sessionToken) {
-      sessionToken = crypto.randomUUID();
-      localStorage.setItem("session_token", sessionToken);
-    }
-
-    const ticketTypes = [
-      ...Array(adultQty).fill("adult"),
-      ...Array(childQty).fill("child"),
-      ...Array(seniorQty).fill("senior"),
-    ];
-
-    const payload = {
-      showtime_id: showtimeId,
-      tickets: selectedSeats.map((seat: string, i: number) => ({
-        seat,
-        type: ticketTypes[i],
-      })),
-      session_token: sessionToken,
-    };
+    setLoading(true);
 
     try {
-      setLoading(true);
-      setError("");
-
-      const res = await fetch(`${API_BASE}/bookings/reserve`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      navigate("/payment", {
+        state: {
+          movieTitle,
+          showtime,
+          showtimeId,
+          email,
+          selectedSeats,
+          adultQty,
+          childQty,
+          seniorQty,
+          totalTickets,
+          totalPrice,
         },
-        body: JSON.stringify(payload),
       });
-
-      if (res.status === 409) {
-        const err = await res.json();
-        setError(err.detail || "Seats already booked.");
-        return;
-      }
-
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || "Booking failed");
-      }
-
-      setSuccess(true);
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
-      setError(err.message || "Could not complete booking.");
+      alert("Could not proceed to payment.");
     } finally {
       setLoading(false);
     }
@@ -108,7 +105,11 @@ export default function ConfirmationPage() {
           <p><b>Movie:</b> {movieTitle}</p>
           <p><b>Showtime:</b> {showtime}</p>
 
+          <p><b>Email:</b> {email || "Loading..."}</p>
+
           <p><b>Seats:</b> {selectedSeats.join(", ")}</p>
+
+          <hr style={{ margin: "10px 0", opacity: 0.2 }} />
 
           <p>
             <b>Adult ($12.99):</b> {adultQty} &nbsp; | &nbsp;
@@ -120,7 +121,22 @@ export default function ConfirmationPage() {
           <p><b>Total Price:</b> ${totalPrice.toFixed(2)}</p>
         </div>
 
-        {error && <p style={{ color: "salmon" }}>{error}</p>}
+        {/* Email edit */}
+        <div style={{ marginTop: 12 }}>
+          <h4 style={{ color: "white" }}>Change Email</h4>
+          <input
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            style={{
+              width: "100%",
+              padding: 10,
+              borderRadius: 10,
+              border: "1px solid rgba(255,255,255,0.2)",
+              background: "rgba(255,255,255,0.05)",
+              color: "white",
+            }}
+          />
+        </div>
 
         <div style={styles.buttonRow}>
           <button style={styles.secondaryBtn} onClick={() => navigate(-1)}>
@@ -130,36 +146,23 @@ export default function ConfirmationPage() {
           <button
             style={styles.btn}
             onClick={handleConfirm}
-            disabled={loading || success}
+            disabled={loading}
           >
-            {loading ? "Processing..." : "Confirm Order"}
+            {loading ? "Processing..." : "Proceed to Payment"}
           </button>
         </div>
       </div>
-
-      {success && (
-        <div style={styles.popupOverlay}>
-          <div style={styles.popup}>
-            <h2>Order Confirmed 🎉</h2>
-            <p>Your seats have been reserved successfully.</p>
-
-            <button style={styles.btn} onClick={() => navigate("/")}>
-              Go to Home Now
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
 
+// ---------------------------
 const styles: Record<string, React.CSSProperties> = {
   page: {
     position: "fixed",
     inset: 0,
     paddingTop: 90,
     overflowY: "auto",
-    backgroundColor: "#0a0a0c",
     background:
       "radial-gradient(1200px 600px at 20% 10%, rgba(255,255,255,0.08), transparent 60%), rgba(10,10,12,1)",
   },
@@ -189,7 +192,6 @@ const styles: Record<string, React.CSSProperties> = {
     display: "flex",
     justifyContent: "space-between",
     marginTop: 20,
-    gap: 12,
   },
 
   btn: {
@@ -209,24 +211,5 @@ const styles: Record<string, React.CSSProperties> = {
     background: "transparent",
     color: "white",
     cursor: "pointer",
-    fontWeight: 700,
-  },
-
-  popupOverlay: {
-    position: "fixed",
-    inset: 0,
-    background: "rgba(0,0,0,0.7)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  popup: {
-    background: "#111",
-    padding: 30,
-    borderRadius: 16,
-    textAlign: "center",
-    border: "1px solid rgba(255,255,255,0.2)",
-    color: "white",
   },
 };
