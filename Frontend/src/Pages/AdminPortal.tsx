@@ -4,8 +4,11 @@ type User = {
   id: string;
   name: string;
   email: string;
+  username: string;
   role: string;
   status: string;
+  createdAt?: number;
+  verifiedAt?: number;
 };
 
 type Movie = {
@@ -65,6 +68,15 @@ type ShowtimeForm = {
   start_time: string;
 };
 
+type UserForm = {
+  name: string;
+  email: string;
+  username: string;
+  password: string;
+  role: string;
+  status: string;
+};
+
 const bgUrl = "/images/backgroundImage.jpg";
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
@@ -80,10 +92,13 @@ export default function AdminMoviesPage() {
   const [showPromoModal, setShowPromoModal] = useState(false);
   const [showShowtimeModal, setShowShowtimeModal] = useState(false);
 
-  const [newUser, setNewUser] = useState<User>({
-    id: "",
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+
+  const [newUser, setNewUser] = useState<UserForm>({
     name: "",
     email: "",
+    username: "",
+    password: "",
     role: "",
     status: "",
   });
@@ -116,6 +131,8 @@ export default function AdminMoviesPage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [loading, setLoading] = useState(true);
+  const [loadingUsers, setLoadingUsers] = useState(true);
+  const [submittingUser, setSubmittingUser] = useState(false);
   const [submittingMovie, setSubmittingMovie] = useState(false);
   const [submittingShowtime, setSubmittingShowtime] = useState(false);
 
@@ -167,16 +184,39 @@ export default function AdminMoviesPage() {
     return map;
   }, [showrooms]);
 
-  const closeUserModal = () => {
-    setShowUserModal(false);
-    setAttemptedUserSubmit(false);
+  const normalizeUser = (rawUser: any): User => {
+    const derivedRole =
+      rawUser.role ||
+      (String(rawUser.username || "").toLowerCase() === "admin" ? "Admin" : "Customer");
+
+    return {
+      id: String(rawUser.id || rawUser._id || ""),
+      name: rawUser.name || "",
+      email: rawUser.email || "",
+      username: rawUser.username || "",
+      role: derivedRole,
+      status: rawUser.status || "Active",
+      createdAt: rawUser.createdAt,
+      verifiedAt: rawUser.verifiedAt,
+    };
+  };
+
+  const resetUserForm = () => {
     setNewUser({
-      id: "",
       name: "",
       email: "",
+      username: "",
+      password: "",
       role: "",
       status: "",
     });
+    setEditingUserId(null);
+    setAttemptedUserSubmit(false);
+  };
+
+  const closeUserModal = () => {
+    setShowUserModal(false);
+    resetUserForm();
   };
 
   const closeMovieModal = () => {
@@ -229,11 +269,17 @@ export default function AdminMoviesPage() {
       if (Array.isArray(data?.detail)) {
         return data.detail.map((item: any) => item?.msg || "Invalid input").join(", ");
       }
+      if (typeof data?.message === "string") return data.message;
       return fallback;
     } catch {
       return fallback;
     }
   };
+
+  const authHeaders = () => ({
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${token}`,
+  });
 
   const timeToMinutes = (time: string) => {
     const [hours, minutes] = time.split(":").map(Number);
@@ -259,6 +305,23 @@ export default function AdminMoviesPage() {
     const endBMins = timeToMinutes(endB);
 
     return startAMins < endBMins && endAMins > startBMins;
+  };
+
+  const fetchUsers = async (): Promise<User[]> => {
+    if (!token) {
+      throw new Error("You must be logged in as an admin to load users.");
+    }
+
+    const response = await fetch(`${API_BASE}/admin/users`, {
+      headers: authHeaders(),
+    });
+
+    if (!response.ok) {
+      throw new Error(await getErrorMessage(response, "Failed to load users."));
+    }
+
+    const data = await response.json();
+    return Array.isArray(data) ? data.map(normalizeUser) : [];
   };
 
   const fetchMovies = async (): Promise<Movie[]> => {
@@ -306,13 +369,16 @@ export default function AdminMoviesPage() {
 
   const loadAdminData = async () => {
     setLoading(true);
+    setLoadingUsers(true);
 
     try {
-      const [movieData, showroomData] = await Promise.all([
+      const [userData, movieData, showroomData] = await Promise.all([
+        fetchUsers(),
         fetchMovies(),
         fetchShowrooms(),
       ]);
 
+      setUsers(userData);
       setMovies(movieData);
       setShowrooms(showroomData);
 
@@ -324,11 +390,12 @@ export default function AdminMoviesPage() {
           "Warning: fewer than 3 showrooms were found in the database. Your rubric requires at least 3 showrooms."
         );
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      setErrorMessage("Failed to load admin data.");
+      setErrorMessage(error?.message || "Failed to load admin data.");
     } finally {
       setLoading(false);
+      setLoadingUsers(false);
     }
   };
 
@@ -336,8 +403,32 @@ export default function AdminMoviesPage() {
     loadAdminData();
   }, []);
 
+  const openAddUserModal = () => {
+    resetMessages();
+    resetUserForm();
+    setShowUserModal(true);
+  };
+
+  const openEditUserModal = (user: User) => {
+    resetMessages();
+    setEditingUserId(user.id);
+    setAttemptedUserSubmit(false);
+    setNewUser({
+      name: user.name || "",
+      email: user.email || "",
+      username: user.username || "",
+      password: "",
+      role: user.role || "",
+      status: user.status || "",
+    });
+    setShowUserModal(true);
+  };
+
   const userNameInvalid = attemptedUserSubmit && !newUser.name.trim();
   const userEmailInvalid = attemptedUserSubmit && !newUser.email.trim();
+  const userUsernameInvalid = attemptedUserSubmit && !newUser.username.trim();
+  const userPasswordInvalid =
+    attemptedUserSubmit && !editingUserId && !newUser.password.trim();
   const userRoleInvalid = attemptedUserSubmit && !newUser.role.trim();
   const userStatusInvalid = attemptedUserSubmit && !newUser.status.trim();
 
@@ -376,32 +467,83 @@ export default function AdminMoviesPage() {
     </label>
   );
 
-  const handleAddUser = () => {
+  const handleSaveUser = async () => {
     resetMessages();
     setAttemptedUserSubmit(true);
 
     if (
       !newUser.name.trim() ||
       !newUser.email.trim() ||
+      !newUser.username.trim() ||
       !newUser.role.trim() ||
-      !newUser.status.trim()
+      !newUser.status.trim() ||
+      (!editingUserId && !newUser.password.trim())
     ) {
-      setErrorMessage("Please complete all user fields.");
+      setErrorMessage("Please complete all required user fields.");
       return;
     }
 
-    const userToAdd: User = {
-      ...newUser,
-      id: Date.now().toString(),
+    if (!token) {
+      setErrorMessage("You must be logged in as an admin to manage users.");
+      return;
+    }
+
+    const payload: Record<string, any> = {
       name: newUser.name.trim(),
       email: newUser.email.trim(),
+      username: newUser.username.trim(),
       role: newUser.role.trim(),
       status: newUser.status.trim(),
     };
 
-    setUsers((prev) => [...prev, userToAdd]);
-    setSuccessMessage("User added successfully.");
-    closeUserModal();
+    if (newUser.password.trim()) {
+      payload.password = newUser.password.trim();
+    }
+
+    try {
+      setSubmittingUser(true);
+
+      const isEditing = Boolean(editingUserId);
+      const url = isEditing
+        ? `${API_BASE}/admin/users/${editingUserId}`
+        : `${API_BASE}/admin/users`;
+
+      const method = isEditing ? "PUT" : "POST";
+
+      const response = await fetch(url, {
+        method,
+        headers: authHeaders(),
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const message = await getErrorMessage(
+          response,
+          isEditing ? "Failed to update user." : "Failed to add user."
+        );
+        setErrorMessage(message);
+        return;
+      }
+
+      const savedUser = normalizeUser(await response.json());
+
+      if (isEditing) {
+        setUsers((prev) =>
+          prev.map((user) => (user.id === savedUser.id ? savedUser : user))
+        );
+        setSuccessMessage("User updated successfully.");
+      } else {
+        setUsers((prev) => [...prev, savedUser]);
+        setSuccessMessage("User added successfully.");
+      }
+
+      closeUserModal();
+    } catch (error) {
+      console.error(error);
+      setErrorMessage(editingUserId ? "Failed to update user." : "Failed to add user.");
+    } finally {
+      setSubmittingUser(false);
+    }
   };
 
   const handleAddMovie = async () => {
@@ -447,10 +589,7 @@ export default function AdminMoviesPage() {
 
       const response = await fetch(`${API_BASE}/admin/movies`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
+        headers: authHeaders(),
         body: JSON.stringify(payload),
       });
 
@@ -560,10 +699,7 @@ export default function AdminMoviesPage() {
 
       const response = await fetch(`${API_BASE}/admin/showtimes`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
+        headers: authHeaders(),
         body: JSON.stringify(payload),
       });
 
@@ -621,10 +757,32 @@ export default function AdminMoviesPage() {
     }
   };
 
-  const handleDeleteUser = (id: string) => {
+  const handleDeleteUser = async (id: string) => {
     resetMessages();
-    setUsers((prev) => prev.filter((user) => user.id !== id));
-    setSuccessMessage("User removed.");
+
+    if (!token) {
+      setErrorMessage("You must be logged in as an admin to delete users.");
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE}/admin/users/${id}`, {
+        method: "DELETE",
+        headers: authHeaders(),
+      });
+
+      if (!response.ok) {
+        const message = await getErrorMessage(response, "Failed to remove user.");
+        setErrorMessage(message);
+        return;
+      }
+
+      setUsers((prev) => prev.filter((user) => user.id !== id));
+      setSuccessMessage("User removed.");
+    } catch (error) {
+      console.error(error);
+      setErrorMessage("Failed to remove user.");
+    }
   };
 
   const handleDeleteMovie = (id: string) => {
@@ -671,13 +829,7 @@ export default function AdminMoviesPage() {
           )}
 
           <div style={styles.topButtonRow}>
-            <button
-              onClick={() => {
-                resetMessages();
-                setShowUserModal(true);
-              }}
-              style={styles.primaryBtn}
-            >
+            <button onClick={openAddUserModal} style={styles.primaryBtn}>
               + Add User
             </button>
 
@@ -717,22 +869,20 @@ export default function AdminMoviesPage() {
               <div style={styles.sectionHeader}>
                 <div>
                   <h2 style={styles.sectionTitle}>Users</h2>
-                  <p style={styles.sectionMeta}>{userCountText}</p>
+                  <p style={styles.sectionMeta}>
+                    {loadingUsers ? "Loading..." : userCountText}
+                  </p>
                 </div>
-                <button
-                  onClick={() => {
-                    resetMessages();
-                    setShowUserModal(true);
-                  }}
-                  style={styles.smallActionBtn}
-                >
+                <button onClick={openAddUserModal} style={styles.smallActionBtn}>
                   Add
                 </button>
               </div>
 
               {users.length === 0 ? (
                 <div style={styles.emptyState}>
-                  No users added yet. Click <strong>Add User</strong> to create one.
+                  {loadingUsers
+                    ? "Loading users..."
+                    : "No users found in the database."}
                 </div>
               ) : (
                 <div style={styles.itemsWrap}>
@@ -740,8 +890,9 @@ export default function AdminMoviesPage() {
                     <div key={user.id} style={styles.itemCard}>
                       <div style={styles.itemTopRow}>
                         <div>
-                          <h3 style={styles.itemTitle}>{user.name}</h3>
+                          <h3 style={styles.itemTitle}>{user.name || "Unnamed User"}</h3>
                           <p style={styles.itemSubtext}>{user.email}</p>
+                          <p style={styles.itemSubtext}>Username: {user.username || "N/A"}</p>
                           <p style={styles.itemSubtext}>
                             {user.role} • {user.status}
                           </p>
@@ -749,6 +900,12 @@ export default function AdminMoviesPage() {
                       </div>
 
                       <div style={styles.itemActions}>
+                        <button
+                          onClick={() => openEditUserModal(user)}
+                          style={styles.editBtn}
+                        >
+                          Edit
+                        </button>
                         <button
                           onClick={() => handleDeleteUser(user.id)}
                           style={styles.deleteBtn}
@@ -942,8 +1099,14 @@ export default function AdminMoviesPage() {
         <div style={styles.modalOverlay}>
           <div style={styles.modal}>
             <div style={styles.modalHeader}>
-              <h3 style={styles.modalTitle}>Add User</h3>
-              <p style={styles.modalSubtitle}>Enter the user details below.</p>
+              <h3 style={styles.modalTitle}>
+                {editingUserId ? "Edit User" : "Add User"}
+              </h3>
+              <p style={styles.modalSubtitle}>
+                {editingUserId
+                  ? "Update the user details below."
+                  : "Enter the user details below."}
+              </p>
             </div>
 
             <div style={styles.fieldGroup}>
@@ -965,6 +1128,34 @@ export default function AdminMoviesPage() {
                 value={newUser.email}
                 onChange={(e) => setNewUser({ ...newUser, email: e.target.value })}
                 style={{ ...styles.input, ...getFieldStyle(userEmailInvalid) }}
+              />
+            </div>
+
+            <div style={styles.fieldGroup}>
+              {renderLabel("Username", true, userUsernameInvalid)}
+              <input
+                type="text"
+                placeholder="Enter username"
+                value={newUser.username}
+                onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
+                style={{ ...styles.input, ...getFieldStyle(userUsernameInvalid) }}
+              />
+            </div>
+
+            <div style={styles.fieldGroup}>
+              {renderLabel(
+                editingUserId ? "Password (leave blank to keep current)" : "Password",
+                !editingUserId,
+                userPasswordInvalid
+              )}
+              <input
+                type="password"
+                placeholder={
+                  editingUserId ? "Leave blank to keep current password" : "Enter password"
+                }
+                value={newUser.password}
+                onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                style={{ ...styles.input, ...getFieldStyle(userPasswordInvalid) }}
               />
             </div>
 
@@ -999,8 +1190,18 @@ export default function AdminMoviesPage() {
               <button onClick={closeUserModal} style={styles.modalSecondaryBtn}>
                 Cancel
               </button>
-              <button onClick={handleAddUser} style={styles.modalPrimaryBtn}>
-                Save User
+              <button
+                onClick={handleSaveUser}
+                style={styles.modalPrimaryBtn}
+                disabled={submittingUser}
+              >
+                {submittingUser
+                  ? editingUserId
+                    ? "Saving..."
+                    : "Creating..."
+                  : editingUserId
+                  ? "Save Changes"
+                  : "Save User"}
               </button>
             </div>
           </div>
@@ -1008,7 +1209,11 @@ export default function AdminMoviesPage() {
       )}
 
       {showMovieModal && (
-        <div style={styles.modalOverlay}>
+        <div
+          style={{
+            ...styles.modalOverlay,
+          }}
+        >
           <div
             style={{
               ...styles.modal,
@@ -1535,6 +1740,18 @@ const styles: Record<string, React.CSSProperties> = {
   itemActions: {
     display: "flex",
     justifyContent: "flex-end",
+    gap: "10px",
+  },
+
+  editBtn: {
+    padding: "10px 14px",
+    borderRadius: "10px",
+    border: "1px solid rgba(255,255,255,0.16)",
+    background: "rgba(255,255,255,0.12)",
+    color: "white",
+    cursor: "pointer",
+    fontWeight: 700,
+    fontSize: "13px",
   },
 
   deleteBtn: {
