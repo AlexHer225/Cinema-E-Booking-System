@@ -23,6 +23,10 @@ from pwdlib import PasswordHash
 from pymongo.errors import DuplicateKeyError
 from cryptography.fernet import Fernet
 
+# new for final demo (using for ai implementation)
+import httpx
+import json
+import asyncio
 
 # Load environment variables
 load_dotenv()
@@ -1417,3 +1421,168 @@ async def remove_favorite(
         {"_id": current_user["_id"]},
         {"$pull": {"favorite_movie_ids": movie_id}},
     )
+
+@app.get("/me/bookings")
+async def get_my_bookings(current_user=Depends(get_current_user)):
+    """
+    Return all bookings belonging to the authenticated user,
+    sorted by creation date descending (most recent first).
+    """
+    user_id = str(current_user["_id"])
+    bookings = []
+    async for booking in bookings_collection.find(
+        {"user_id": user_id},
+        sort=[("created_at", -1)],
+    ):
+        bookings.append(booking_serializer(booking))
+    return bookings
+
+@app.get("/users/me/recommendations")
+async def get_recommendations(current_user=Depends(get_current_user)):
+
+    # 1. Check cache first
+    cached = current_user.get("cached_recommendations")
+    cached_at = current_user.get("recommendations_cached_at", 0)
+    cache_age_hours = (time.time() - cached_at) / 3600
+
+    if cached and cache_age_hours < 24:
+        return cached
+
+    # 2. Pull favorite movie IDs directly from the user document
+    favorite_ids = current_user.get("favorite_movie_ids", [])
+
+    if not favorite_ids:
+        # Fallback: return currently playing movies if no favorites yet
+        candidates = []
+        async for movie in collection.find({"currentlyPlaying": True}).limit(6):
+            candidates.append(movie_serializer(movie))
+        return {"recommendations": candidates, "reason": None}
+
+    favorite_movies_data = []
+    for movie_id in favorite_ids:
+        if not ObjectId.is_valid(movie_id):
+            continue
+        movie = await collection.find_one({"_id": ObjectId(movie_id)})
+        if movie:
+            favorite_movies_data.append({
+                "title": movie["title"],
+                "genre": movie.get("genre", []),
+                "rating": movie.get("rating", ""),
+            })
+
+    liked_genres = []
+    for movie in favorite_movies_data:
+        liked_genres.extend(movie.get("genre", []))
+    liked_genres = list(set(liked_genres))  # deduplicate
+
+    candidate_cursor = collection.find({
+        "_id": {"$nin": [ObjectId(id) for id in favorite_ids if ObjectId.is_valid(id)]},
+        "genre": {"$in": liked_genres},
+        "currentlyPlaying": True,
+    }).limit(10)
+
+    candidates = []
+    async for movie in candidate_cursor:
+        candidates.append(movie_serializer(movie))
+
+    if not candidates:
+        return {"recommendations": [], "reason": None}
+
+    recommendations = await get_gemini_recommendations(
+        favorite_movies=favorite_movies_data,
+        candidates=candidates,
+    )
+
+    await users_collection.update_one(
+        {"_id": current_user["_id"]},
+        {"$set": {
+            "cached_recommendations": recommendations,
+            "recommendations_cached_at": int(time.time()),
+        }}
+    )
+
+    return recommendations
+
+async def get_gemini_recommendations(favorite_movies: list, candidates: list) -> dict:
+    
+    candidate_list = "\n".join([
+        f"- {m['title']} | Genres: {', '.join(m['genre'])} | Rating: {m['rating']}"
+        for m in candidates
+    ])
+
+    prompt = f"""You are a movie recommendation assistant for a cinema booking system.
+
+A user has marked these movies as their favorites:
+{chr(10).join(f"- {m['title']} (Genres: {', '.join(m['genre'])})" for m in favorite_movies)}
+
+From the following currently playing movies, pick the top 3 recommendations for this user.
+Only choose from this list:
+{candidate_list}
+
+Respond in JSON only, no markdown, no explanation outside the JSON. Use this exact format:
+{{
+  "recommendations": [
+    {{
+      "title": "<exact movie title from the list>",
+      "reason": "<2 sentence personalized explanation referencing their specific favorites>"
+    }}
+  ]
+}}"""
+
+    max_retries = 3
+    base_delay = 1.0 
+
+    async with httpx.AsyncClient(trust_env=False) as client:
+        for attempt in range(max_retries):
+            response = await client.post(
+                "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+                headers={"Content-Type": "application/json"},
+                params={"key": os.getenv("GEMINI_API_KEY")},
+                json={
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {
+                        "responseMimeType": "application/json" 
+                    }
+                },
+                timeout=30.0,
+            )
+
+            if response.status_code == 200:
+                break
+            
+            elif response.status_code == 429:
+                if attempt < max_retries - 1:
+                    sleep_time = base_delay * (2 ** attempt)
+                    print(f"Rate limited (429). Retrying in {sleep_time} seconds...")
+                    await asyncio.sleep(sleep_time)
+                    continue
+                else:
+                    print(f"CRITICAL 429 ERROR BODY: {response.text}")
+                    raise HTTPException(status_code=429, detail="Too many requests to recommendation service. Please try again later.")
+            
+            else:
+                print(f"UNEXPECTED ERROR {response.status_code}: {response.text}")
+                raise HTTPException(status_code=502, detail=f"Recommendation service failed: {response.status_code}")
+
+    raw_text = response.json()["candidates"][0]["content"]["parts"][0]["text"]
+
+    try:
+        result = json.loads(raw_text)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=502, detail="Failed to parse recommendations")
+
+    candidates_by_title = {m["title"]: m for m in candidates}
+    enriched = []
+    
+    for rec in result.get("recommendations", []):
+        rec_title = rec.get("title", "")
+        
+        movie_data = candidates_by_title.get(rec_title)
+        
+        if movie_data:
+            enriched.append({
+                **movie_data,
+                "reason": rec.get("reason", "Recommended based on your favorite genres and viewing history."),
+            })
+
+    return {"recommendations": enriched}
