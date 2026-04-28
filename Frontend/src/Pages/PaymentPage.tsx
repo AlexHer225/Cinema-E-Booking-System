@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 const API_BASE =
@@ -13,10 +13,41 @@ export default function PaymentPage() {
   const [popup, setPopup] = useState(false);
   const [error, setError] = useState("");
 
-  const [cardName, setCardName] = useState("John Doe");
-  const [cardNumber, setCardNumber] = useState("4242 4242 4242 4242");
-  const [expiry, setExpiry] = useState("12/28");
-  const [cvv, setCvv] = useState("123");
+  const [savedCards, setSavedCards] = useState<any[]>([]);
+  const [selectedCardIndex, setSelectedCardIndex] = useState<number | null>(null);
+
+  const [cardName, setCardName] = useState("");
+  const [cardNumber, setCardNumber] = useState("");
+  const [expiry, setExpiry] = useState("");
+  const [cvv, setCvv] = useState("");
+
+  useEffect(() => {
+    const fetchSavedCards = async () => {
+      try {
+        const token = localStorage.getItem("access_token");
+        if (!token) return;
+
+        const res = await fetch(`${API_BASE}/me/cards`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!res.ok) return;
+
+        const data = await res.json();
+        setSavedCards(data.payment_cards || []);
+
+        if ((data.payment_cards || []).length > 0) {
+          setSelectedCardIndex(0);
+        }
+      } catch (err) {
+        console.error("Failed to load cards", err);
+      }
+    };
+
+    fetchSavedCards();
+  }, []);
 
   if (!state) {
     return (
@@ -34,38 +65,37 @@ export default function PaymentPage() {
   const {
     movieTitle,
     showtime,
-    showtimeId,
     email,
     selectedSeats = [],
-    adultQty = 0,
-    childQty = 0,
-    seniorQty = 0,
     totalPrice = 0,
     bookingId,
   } = state;
+
+  const getCardLast4 = (card: any) => {
+    if (card?.last4) return card.last4;
+
+    if (card?.card_number && typeof card.card_number === "string") {
+      return card.card_number.slice(-4);
+    }
+
+    return "Missing";
+  };
 
   const handlePayment = async () => {
     try {
       setLoading(true);
       setError("");
 
-      if (!cardName.trim() || !cardNumber.trim() || !expiry.trim() || !cvv.trim()) {
-        throw new Error("Please fill in all payment details");
+      if (selectedCardIndex === null) {
+        if (!cardName || !cardNumber || !expiry || !cvv) {
+          throw new Error("Select a saved card or enter payment details.");
+        }
       }
 
       const token = localStorage.getItem("access_token");
+      if (!token) throw new Error("Must be logged in.");
 
-      if (!token) {
-        throw new Error("You must be logged in to complete payment");
-      }
-
-      if (!bookingId) {
-        throw new Error("Booking ID missing. Please go back and try again.");
-      }
-
-      if (!email?.trim()) {
-        throw new Error("Email is required");
-      }
+      if (!bookingId) throw new Error("Missing booking ID.");
 
       const emailRes = await fetch(`${API_BASE}/send-confirmation-email`, {
         method: "POST",
@@ -75,24 +105,11 @@ export default function PaymentPage() {
         },
         body: JSON.stringify({
           booking_id: bookingId,
-          email: email.trim(),
+          email,
         }),
       });
 
-      if (!emailRes.ok) {
-        let message = "Email confirmation failed";
-
-        try {
-          const msg = await emailRes.json();
-          message = msg.detail || msg.message || message;
-        } catch {
-          // ignore parse failure
-        }
-
-        throw new Error(message);
-      }
-
-      await emailRes.json();
+      if (!emailRes.ok) throw new Error("Email failed.");
 
       setPopup(true);
 
@@ -102,8 +119,7 @@ export default function PaymentPage() {
         navigate("/");
       }, 1500);
     } catch (err: any) {
-      console.error(err);
-      setError(err.message || "Payment failed");
+      setError(err.message || "Payment failed.");
     } finally {
       setLoading(false);
     }
@@ -112,52 +128,102 @@ export default function PaymentPage() {
   return (
     <div style={styles.page}>
       <div style={styles.container}>
-        <h1 style={styles.title}>Payment Processing</h1>
+        <h1 style={styles.title}>Payment</h1>
 
         <div style={styles.card}>
-          <p><b>Movie:</b> {movieTitle}</p>
-          <p><b>Showtime:</b> {showtime}</p>
-          <p><b>Email:</b> {email}</p>
-          <p><b>Seats:</b> {selectedSeats.join(", ")}</p>
-          <hr style={{ opacity: 0.2, margin: "10px 0" }} />
-          <p><b>Total Amount:</b> ${Number(totalPrice).toFixed(2)}</p>
+          <p>
+            <b>Movie:</b> {movieTitle}
+          </p>
+          <p>
+            <b>Showtime:</b> {showtime}
+          </p>
+          <p>
+            <b>Email:</b> {email}
+          </p>
+          <p>
+            <b>Seats:</b> {selectedSeats.join(", ")}
+          </p>
+
+          <hr style={styles.hr} />
+
+          <p>
+            <b>Total:</b> ${Number(totalPrice).toFixed(2)}
+          </p>
         </div>
 
+        {savedCards.length > 0 && (
+          <div style={styles.card}>
+            <h3 style={styles.sectionTitle}>Saved Cards</h3>
+
+            {savedCards.map((card, index) => (
+              <label key={index} style={styles.cardOption}>
+                <input
+                  type="radio"
+                  checked={selectedCardIndex === index}
+                  onChange={() => setSelectedCardIndex(index)}
+                />
+
+                <div>
+                  <div>
+                    {card.cardholder_name || "Saved Card"} — ****{" "}
+                    {getCardLast4(card)}
+                  </div>
+                  <div style={styles.muted}>
+                    Exp {card.expiry_month}/{card.expiry_year}
+                  </div>
+                </div>
+              </label>
+            ))}
+          </div>
+        )}
+
         <div style={styles.card}>
-          <h3>Payment Details</h3>
+          <h3 style={styles.sectionTitle}>Or Enter New Card</h3>
 
           <input
             style={styles.input}
             placeholder="Cardholder Name"
             value={cardName}
-            onChange={(e) => setCardName(e.target.value)}
+            onChange={(e) => {
+              setCardName(e.target.value);
+              setSelectedCardIndex(null);
+            }}
           />
 
           <input
             style={styles.input}
             placeholder="Card Number"
             value={cardNumber}
-            onChange={(e) => setCardNumber(e.target.value)}
+            onChange={(e) => {
+              setCardNumber(e.target.value);
+              setSelectedCardIndex(null);
+            }}
           />
 
-          <div style={{ display: "flex", gap: 10 }}>
+          <div style={styles.row}>
             <input
               style={styles.input}
               placeholder="MM/YY"
               value={expiry}
-              onChange={(e) => setExpiry(e.target.value)}
+              onChange={(e) => {
+                setExpiry(e.target.value);
+                setSelectedCardIndex(null);
+              }}
             />
 
             <input
               style={styles.input}
               placeholder="CVV"
               value={cvv}
-              onChange={(e) => setCvv(e.target.value)}
+              onChange={(e) => {
+                setCvv(e.target.value);
+                setSelectedCardIndex(null);
+              }}
             />
           </div>
         </div>
 
-        {error && <p style={{ color: "red" }}>{error}</p>}
+        {error && <p style={styles.error}>{error}</p>}
 
         <button style={styles.btn} onClick={handlePayment} disabled={loading}>
           {loading ? "Processing..." : "Confirm & Pay"}
@@ -168,7 +234,7 @@ export default function PaymentPage() {
         <div style={styles.overlay}>
           <div style={styles.popup}>
             <h2>Payment Successful 🎉</h2>
-            <p>Your booking is confirmed. Email sent.</p>
+            <p>Booking confirmed!</p>
           </div>
         </div>
       )}
@@ -178,65 +244,91 @@ export default function PaymentPage() {
 
 const styles: Record<string, React.CSSProperties> = {
   page: {
-    position: "fixed",
-    inset: 0,
+    minHeight: "100vh",
     paddingTop: 90,
-    background:
-      "radial-gradient(1200px 600px at 20% 10%, rgba(255,255,255,0.08), transparent 60%), rgba(10,10,12,1)",
+    paddingBottom: 80,
+    background: "#0a0a0c",
     overflowY: "auto",
   },
   container: {
     maxWidth: 800,
     margin: "0 auto",
-    padding: "0 24px",
+    padding: 20,
     color: "white",
   },
   title: {
-    fontSize: 34,
-    fontWeight: 800,
+    fontSize: 30,
     marginBottom: 20,
   },
   card: {
-    border: "1px solid rgba(255,255,255,0.14)",
-    background: "rgba(255,255,255,0.06)",
-    borderRadius: 16,
+    background: "#111",
     padding: 20,
+    borderRadius: 12,
     marginBottom: 15,
+  },
+  sectionTitle: {
+    marginTop: 0,
+  },
+  cardOption: {
+    display: "flex",
+    alignItems: "center",
+    gap: 10,
+    padding: 12,
+    border: "1px solid #333",
+    borderRadius: 10,
+    marginTop: 10,
+    cursor: "pointer",
   },
   input: {
     width: "100%",
-    padding: "10px",
-    marginTop: 8,
-    marginBottom: 8,
-    borderRadius: 10,
-    border: "1px solid rgba(255,255,255,0.2)",
-    background: "rgba(255,255,255,0.05)",
+    boxSizing: "border-box",
+    padding: 12,
+    marginTop: 10,
+    borderRadius: 8,
+    border: "1px solid #333",
+    background: "#222",
     color: "white",
-    outline: "none",
+  },
+  row: {
+    display: "flex",
+    gap: 10,
   },
   btn: {
-    padding: "12px 16px",
-    borderRadius: 12,
-    border: "1px solid rgba(255,255,255,0.18)",
-    background: "rgba(255,255,255,0.08)",
+    padding: 14,
+    width: "100%",
+    borderRadius: 10,
+    border: "none",
+    background: "#444",
     color: "white",
     cursor: "pointer",
-    fontWeight: 800,
+    fontWeight: "bold",
+    marginTop: 5,
+    marginBottom: 40,
   },
   overlay: {
     position: "fixed",
     inset: 0,
     background: "rgba(0,0,0,0.6)",
     display: "flex",
-    alignItems: "center",
     justifyContent: "center",
+    alignItems: "center",
   },
   popup: {
     background: "#111",
     padding: 30,
-    borderRadius: 16,
-    border: "1px solid rgba(255,255,255,0.2)",
-    textAlign: "center" as const,
+    borderRadius: 12,
     color: "white",
+  },
+  muted: {
+    opacity: 0.7,
+    marginTop: 3,
+  },
+  error: {
+    color: "#ff6b6b",
+    marginBottom: 12,
+  },
+  hr: {
+    opacity: 0.2,
+    margin: "18px 0",
   },
 };

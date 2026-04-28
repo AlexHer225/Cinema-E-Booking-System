@@ -567,6 +567,25 @@ async def add_movie(body: AddMovie, current_user=Depends(get_current_user)):
     return movie_serializer(created_movie)
 
 
+@app.get("/admin/users")
+async def get_admin_users(current_user=Depends(get_current_user)):
+    """
+    Admin endpoint: return all users in the system.
+    Requires authentication and admin role.
+    """
+    if current_user.get("role") != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required.",
+        )
+
+    users = []
+    async for user in users_collection.find():
+        users.append(user_serializer(user))
+
+    return users
+
+
 # ---------- Showrooms ----------
 
 @app.get("/showrooms")
