@@ -27,6 +27,24 @@ type Movie = {
   title: string;
 };
 
+type BookingTicket = {
+  seat: string;
+  type: string;
+  price: number;
+};
+
+type Booking = {
+  id: string;
+  movie_title: string;
+  showroom_name: string;
+  date: string;
+  start_time: string;
+  tickets: BookingTicket[];
+  total_price: number;
+  status: string;
+  email?: string;
+};
+
 type UserProfile = {
   id?: string;
   name: string;
@@ -40,6 +58,7 @@ export default function EditProfilePage() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [cards, setCards] = useState<PaymentCard[]>([]);
   const [favorites, setFavorites] = useState<Movie[]>([]);
+  const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [isSavingProfile, setIsSavingProfile] = useState(false);
@@ -68,25 +87,31 @@ export default function EditProfilePage() {
         setServerError("");
         setSuccessMessage("");
 
-        const [profileRes, cardsRes, favoritesRes] = await Promise.all([
-          fetch(`${API_BASE}/me/profile`, {
-            headers: { Authorization: `Bearer ${token}` },
-          }),
-          fetch(`${API_BASE}/me/cards`, {
-            headers: { Authorization: `Bearer ${token}` },
-          }),
-          fetch(`${API_BASE}/me/favorites`, {
-            headers: { Authorization: `Bearer ${token}` },
-          }),
-        ]);
+        const [profileRes, cardsRes, favoritesRes, bookingsRes] =
+          await Promise.all([
+            fetch(`${API_BASE}/me/profile`, {
+              headers: { Authorization: `Bearer ${token}` },
+            }),
+            fetch(`${API_BASE}/me/cards`, {
+              headers: { Authorization: `Bearer ${token}` },
+            }),
+            fetch(`${API_BASE}/me/favorites`, {
+              headers: { Authorization: `Bearer ${token}` },
+            }),
+            fetch(`${API_BASE}/me/bookings`, {
+              headers: { Authorization: `Bearer ${token}` },
+            }),
+          ]);
 
         if (!profileRes.ok) throw new Error("Could not load profile.");
         if (!cardsRes.ok) throw new Error("Could not load payment cards.");
         if (!favoritesRes.ok) throw new Error("Could not load favorites.");
+        if (!bookingsRes.ok) throw new Error("Could not load order history.");
 
         const profileData = await profileRes.json();
         const cardsData = await cardsRes.json();
         const favoritesData = await favoritesRes.json();
+        const bookingsData = await bookingsRes.json();
 
         setUser({
           id: profileData.id,
@@ -113,6 +138,20 @@ export default function EditProfilePage() {
           (favoritesData || []).map((m: any) => ({
             id: m.id,
             title: m.title,
+          }))
+        );
+
+        setBookings(
+          (bookingsData || []).map((b: any) => ({
+            id: b.id,
+            movie_title: b.movie_title || "",
+            showroom_name: b.showroom_name || "",
+            date: b.date || "",
+            start_time: b.start_time || "",
+            tickets: b.tickets || [],
+            total_price: Number(b.total_price) || 0,
+            status: b.status || "",
+            email: b.email || "",
           }))
         );
       } catch (err: any) {
@@ -547,7 +586,7 @@ export default function EditProfilePage() {
             <h1 style={styles.title}>Edit Profile</h1>
             <p style={styles.subtitle}>
               Update your information, manage your saved cards, change your
-              password, and review your favorite movies.
+              password, review your favorite movies, and view your order history.
             </p>
           </div>
 
@@ -929,6 +968,77 @@ export default function EditProfilePage() {
               </ul>
             )}
           </section>
+
+          <section style={styles.section}>
+            <h2 style={styles.sectionTitle}>Order History</h2>
+            <p style={styles.helperText}>
+              View your past and current movie ticket bookings.
+            </p>
+
+            {bookings.length === 0 ? (
+              <p style={styles.helperText}>No orders yet.</p>
+            ) : (
+              <div style={styles.orderList}>
+                {bookings.map((booking) => (
+                  <div key={booking.id} style={styles.orderBox}>
+                    <div style={styles.orderHeader}>
+                      <div>
+                        <h3 style={styles.orderTitle}>
+                          {booking.movie_title || "Untitled Movie"}
+                        </h3>
+                        <p style={styles.helperText}>
+                          {booking.date || "No date"} at{" "}
+                          {booking.start_time || "No time"}
+                        </p>
+                      </div>
+
+                      <span style={styles.statusBadge}>
+                        {booking.status || "unknown"}
+                      </span>
+                    </div>
+
+                    <p style={styles.orderText}>
+                      <b>Showroom:</b>{" "}
+                      {booking.showroom_name || "No showroom listed"}
+                    </p>
+
+                    <p style={styles.orderText}>
+                      <b>Seats:</b>{" "}
+                      {booking.tickets.length > 0
+                        ? booking.tickets
+                            .map((ticket) => ticket.seat)
+                            .join(", ")
+                        : "No seats listed"}
+                    </p>
+
+                    <p style={styles.orderText}>
+                      <b>Tickets:</b>{" "}
+                      {booking.tickets.length > 0
+                        ? booking.tickets
+                            .map(
+                              (ticket) =>
+                                `${ticket.type} - $${Number(
+                                  ticket.price
+                                ).toFixed(2)}`
+                            )
+                            .join(", ")
+                        : "No ticket details"}
+                    </p>
+
+                    {booking.email && (
+                      <p style={styles.orderText}>
+                        <b>Email:</b> {booking.email}
+                      </p>
+                    )}
+
+                    <p style={styles.orderTotal}>
+                      Total: ${Number(booking.total_price).toFixed(2)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
         </div>
       </div>
     </div>
@@ -1120,5 +1230,48 @@ const styles: Record<string, React.CSSProperties> = {
   favoriteItem: {
     marginBottom: 8,
     color: "rgba(255,255,255,0.9)",
+  },
+  orderList: {
+    display: "flex",
+    flexDirection: "column",
+    gap: 12,
+  },
+  orderBox: {
+    padding: 14,
+    borderRadius: 12,
+    background: "rgba(255,255,255,0.04)",
+    border: "1px solid rgba(255,255,255,0.08)",
+  },
+  orderHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    gap: 12,
+    marginBottom: 10,
+  },
+  orderTitle: {
+    margin: 0,
+    fontSize: 17,
+    fontWeight: 800,
+  },
+  statusBadge: {
+    padding: "5px 9px",
+    borderRadius: 999,
+    background: "rgba(255,255,255,0.12)",
+    border: "1px solid rgba(255,255,255,0.14)",
+    fontSize: 12,
+    fontWeight: 800,
+    textTransform: "capitalize",
+  },
+  orderText: {
+    margin: "5px 0",
+    fontSize: 13,
+    color: "rgba(255,255,255,0.85)",
+  },
+  orderTotal: {
+    margin: "10px 0 0",
+    fontSize: 15,
+    fontWeight: 800,
+    color: "white",
   },
 };
