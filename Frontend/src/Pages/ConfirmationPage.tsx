@@ -66,7 +66,7 @@ export default function ConfirmationPage() {
 
     try {
       const token = localStorage.getItem("access_token");
-      const bookingId = localStorage.getItem("booking_id");
+      const bookingId = state?.bookingId;
 
       if (!token) {
         alert("You must be logged in to continue.");
