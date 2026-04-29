@@ -84,72 +84,159 @@ const LoginPage: React.FC = () => {
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setServerError("");
+  e.preventDefault();
+  setServerError("");
 
-    const validationErrors = validate();
-    if (Object.keys(validationErrors).length > 0) {
-      setErrors(validationErrors);
+  const validationErrors = validate();
+  if (Object.keys(validationErrors).length > 0) {
+    setErrors(validationErrors);
+    return;
+  }
+
+  setErrors({});
+  setIsSubmitting(true);
+
+  try {
+    // ─────────────────────────────
+    // LOGIN REQUEST
+    // ─────────────────────────────
+    const response = await fetch(`${API_BASE_URL}/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: formData.username.trim(),
+        password: formData.password,
+      }),
+    });
+
+    const data: LoginResponse | any = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      setServerError(getErrorMessage(data));
       return;
     }
 
-    setErrors({});
-    setIsSubmitting(true);
+    if (!data?.access_token) {
+      setServerError("Login succeeded, but no access token was returned.");
+      return;
+    }
+
+    // ─────────────────────────────
+    // SAVE AUTH
+    // ─────────────────────────────
+    localStorage.setItem("access_token", data.access_token);
+    localStorage.setItem("token_type", data.token_type || "bearer");
+    if (data.user) {
+      localStorage.setItem("user", JSON.stringify(data.user));
+    }
+
+    window.dispatchEvent(new Event("storage"));
+
+    // ─────────────────────────────
+    // GET PENDING BOOKING
+    // ─────────────────────────────
+    let pendingBooking: any = null;
 
     try {
-      const response = await fetch(`${API_BASE_URL}/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          username: formData.username.trim(),
-          password: formData.password,
-        }),
-      });
+      const raw = sessionStorage.getItem("pending_booking");
+      if (raw) pendingBooking = JSON.parse(raw);
+    } catch (err) {
+      console.error("pending_booking parse error:", err);
+    }
 
-      const data: LoginResponse | any = await response.json().catch(() => null);
+    console.log("pendingBooking:", pendingBooking);
 
-      if (!response.ok) {
-        setServerError(getErrorMessage(data));
-        return;
-      }
+    // ─────────────────────────────
+    // IF USER WAS BOOKING → RESERVE NOW
+    // ─────────────────────────────
+    if (pendingBooking) {
+      try {
+        let sessionToken = localStorage.getItem("session_token");
 
-      if (!data?.access_token) {
-        setServerError("Login succeeded, but no access token was returned.");
-        return;
-      }
+        if (!sessionToken) {
+          sessionToken = crypto.randomUUID();
+          localStorage.setItem("session_token", sessionToken);
+        }
 
-      localStorage.setItem("access_token", data.access_token);
-      localStorage.setItem("token_type", data.token_type || "bearer");
-      if (data.user) localStorage.setItem("user", JSON.stringify(data.user));
+        const ticketTypes = [
+          ...Array(pendingBooking.adultQty).fill("adult"),
+          ...Array(pendingBooking.childQty).fill("child"),
+          ...Array(pendingBooking.seniorQty).fill("senior"),
+        ];
 
-      window.dispatchEvent(new Event("storage"));
+        const payload = {
+          showtime_id: pendingBooking.showtimeId,
+          tickets: pendingBooking.selectedSeats.map(
+            (seat: string, i: number) => ({
+              seat,
+              type: ticketTypes[i],
+            })
+          ),
+          session_token: sessionToken,
+        };
 
-    const pendingBooking = getPendingBooking();
+        const reserveRes = await fetch(
+          `${API_BASE_URL}/bookings/reserve`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${data.access_token}`,
+            },
+            body: JSON.stringify(payload),
+          }
+        );
 
-      console.log("pendingBooking:", pendingBooking);
+        if (reserveRes.status === 409) {
+          const err = await reserveRes.json();
+          setServerError(err.detail || "Seats already taken.");
+          return;
+        }
 
-      if (pendingBooking) {
+        if (!reserveRes.ok) {
+          const err = await reserveRes.json().catch(() => null);
+          throw new Error(err?.detail || "Reservation failed.");
+        }
+
+        const bookingData = await reserveRes.json();
+
+        // ✅ Attach bookingId
+        const fullState = {
+          ...pendingBooking,
+          bookingId: bookingData.id,
+        };
+
         sessionStorage.removeItem("pending_booking");
 
-        navigate("/confirmation", { state: pendingBooking });
+        navigate("/confirmation", {
+          state: fullState,
+        });
+
+        return;
+      } catch (err: any) {
+        console.error("Post-login reservation error:", err);
+        setServerError(err.message || "Failed to reserve seats.");
         return;
       }
-
-
-const username = formData.username.trim().toLowerCase();
-
-if (username === "admin") {
-  navigate("/admin");
-} else {
-  navigate("/");
-}
-    } catch (error) {
-      console.error("Login error:", error);
-      setServerError("Could not connect to the server.");
-    } finally {
-      setIsSubmitting(false);
     }
-  };
+
+    // ─────────────────────────────
+    // NORMAL LOGIN (NO BOOKING)
+    // ─────────────────────────────
+    const username = formData.username.trim().toLowerCase();
+
+    if (username === "admin") {
+      navigate("/admin");
+    } else {
+      navigate("/");
+    }
+  } catch (error) {
+    console.error("Login error:", error);
+    setServerError("Could not connect to the server.");
+  } finally {
+    setIsSubmitting(false);
+  }
+};
 
   // ── Forgot password handlers ──
   const openForgotModal = () => {
