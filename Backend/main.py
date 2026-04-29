@@ -502,6 +502,38 @@ If you did not authorize this change, please reset your password immediately and
 """)
     send_email(msg)
     
+
+def send_booking_confirmation_email(to_email: str, booking: dict) -> None:
+    """Send a booking confirmation email after checkout/payment is completed."""
+    msg = EmailMessage()
+    msg["Subject"] = "Your movie booking confirmation"
+    msg["From"] = MAIL_FROM
+    msg["To"] = to_email
+
+    tickets_text = "\n".join(
+        f"- Seat {t.get('seat', '')} ({t.get('type', '')}): ${float(t.get('price', 0)):.2f}"
+        for t in booking.get("tickets", [])
+    )
+
+    msg.set_content(f"""Hi,
+
+Your booking is confirmed!
+
+Movie: {booking.get("movie_title", "")}
+Showroom: {booking.get("showroom_name", "")}
+Date: {booking.get("date", "")}
+Time: {booking.get("start_time", "")}
+
+Tickets:
+{tickets_text}
+
+Total: ${float(booking.get("total_price", 0)):.2f}
+
+Thank you for booking with us!
+""")
+
+    send_email(msg)
+
 # ---------- Movie endpoints ----------
 
 @app.get("/movies")
@@ -945,6 +977,49 @@ async def checkout_booking(
         "ticket_prices": TICKET_PRICES,
     }
 
+
+
+@app.post("/send-confirmation-email")
+async def send_confirmation_email(
+    body: ConfirmEmail,
+    background_tasks: BackgroundTasks,
+    current_user=Depends(get_current_user),
+):
+    """
+    Send a confirmation email for the authenticated user's most recent booking
+    matching the submitted email. Also marks the booking as confirmed.
+    """
+    email = str(body.email).strip().lower()
+
+    booking = await bookings_collection.find_one(
+        {
+            "user_id": str(current_user["_id"]),
+            "email": email,
+            "status": {"$in": ["reserved", "confirmed"]},
+        },
+        sort=[("created_at", -1)],
+    )
+
+    if not booking:
+        raise HTTPException(status_code=404, detail="No booking found.")
+
+    await bookings_collection.update_one(
+        {"_id": booking["_id"]},
+        {"$set": {"status": "confirmed"}},
+    )
+
+    updated_booking = await bookings_collection.find_one({"_id": booking["_id"]})
+
+    background_tasks.add_task(
+        send_booking_confirmation_email,
+        email,
+        updated_booking,
+    )
+
+    return {
+        "message": "Confirmation email sent.",
+        "booking": booking_serializer(updated_booking),
+    }
 
 # ---------- Auth endpoints ----------
 @app.put("/me/password", status_code=status.HTTP_200_OK)
